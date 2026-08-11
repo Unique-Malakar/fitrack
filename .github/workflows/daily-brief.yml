@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Build the brief but do not send email"
+        description: "Build everything but do not send email"
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: daily-brief
@@ -27,22 +27,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
-      built: ${{ steps.build.outcome }}
+      dashboard_built: ${{ steps.check.outputs.built }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       # The pipeline is stdlib-only, so there is nothing to install for the core run.
-      # requirements.txt holds the optional yfinance fallback only.
       - name: Run tests
         run: python -m unittest discover -s tests
 
+      # continue-on-error matters here. Email and the dashboard are independent
+      # deliverables, and an unset SMTP password used to abort this step, which
+      # skipped Pages publishing entirely - losing a dashboard that had already been
+      # built successfully. The job still reports failure at the end, so a broken
+      # email is visible; it just no longer takes the dashboard down with it.
       - name: Generate brief and dashboard
         id: build
+        continue-on-error: true
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
@@ -53,16 +58,39 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            python -m src.main --dashboard --dry-run
-          else
+          if [ "${{ inputs.dry_run }}" = "false" ]; then
             python -m src.main --dashboard
+          else
+            python -m src.main --dashboard --dry-run
           fi
 
+      - name: Check what was produced
+        id: check
+        if: always()
+        run: |
+          if [ -s build/dashboard.html ]; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+            echo "Dashboard built: $(wc -c < build/dashboard.html) bytes"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "No dashboard produced."
+          fi
+
+      - name: Assemble Pages site
+        if: always() && steps.check.outputs.built == 'true'
+        run: |
+          mkdir -p site
+          cp build/dashboard.html site/index.html
+
+      - uses: actions/upload-pages-artifact@v5
+        if: always() && steps.check.outputs.built == 'true'
+        with:
+          path: site
+
       # The snapshot history is the dataset the dashboard charts, so it has to
-      # survive the runner being destroyed. Committing back to the repo keeps it free.
+      # survive the runner being destroyed.
       - name: Commit snapshot
-        if: success() && inputs.dry_run != true
+        if: always() && steps.check.outputs.built == 'true' && inputs.dry_run == false
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -71,36 +99,31 @@ jobs:
             echo "No new snapshot to commit."
           else
             git commit -m "data: snapshot $(date -u +%Y-%m-%d)"
-            # Another run may have pushed since checkout; rebase rather than fail.
             git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
             git push
           fi
 
-      - name: Assemble Pages site
-        if: success()
-        run: |
-          mkdir -p site
-          cp build/dashboard.html site/index.html
-
-      - uses: actions/upload-pages-artifact@v3
-        if: success()
-        with:
-          path: site
-
-      # A failed brief is silent otherwise - you would just not get an email, which
-      # is indistinguishable from a quiet market.
       - name: Upload debug output on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
+        if: steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v5
         with:
           name: brief-debug
           path: build/
           if-no-files-found: ignore
           retention-days: 7
 
+      # Surface the failure only after the dashboard has been safely published.
+      - name: Report brief failure
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::The brief step failed. If the dashboard published, this is"
+          echo "::error::most likely a missing or wrong SMTP_PASSWORD secret."
+          exit 1
+
   deploy-dashboard:
     needs: brief
-    if: needs.brief.result == 'success'
+    # Deploy whenever a dashboard exists, even if emailing failed.
+    if: always() && needs.brief.outputs.dashboard_built == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -108,4 +131,4 @@ jobs:
     steps:
       # Requires Settings -> Pages -> Source set to "GitHub Actions".
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
