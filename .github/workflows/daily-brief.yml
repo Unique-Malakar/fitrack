@@ -1,0 +1,111 @@
+name: Daily Market Brief
+
+on:
+  schedule:
+    # 11:10 UTC = 07:10 ET (EDT) / 06:10 ET (EST), before the 09:30 open either way.
+    # GitHub's scheduler queues on shared runners and can drift 5-15 minutes at peak
+    # times, so this is set early enough to absorb that.
+    - cron: "10 11 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build the brief but do not send email"
+        type: boolean
+        default: false
+
+concurrency:
+  group: daily-brief
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      built: ${{ steps.build.outcome }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The pipeline is stdlib-only, so there is nothing to install for the core run.
+      # requirements.txt holds the optional yfinance fallback only.
+      - name: Run tests
+        run: python -m unittest discover -s tests
+
+      - name: Generate brief and dashboard
+        id: build
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python -m src.main --dashboard --dry-run
+          else
+            python -m src.main --dashboard
+          fi
+
+      # The snapshot history is the dataset the dashboard charts, so it has to
+      # survive the runner being destroyed. Committing back to the repo keeps it free.
+      - name: Commit snapshot
+        if: success() && inputs.dry_run != true
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No new snapshot to commit."
+          else
+            git commit -m "data: snapshot $(date -u +%Y-%m-%d)"
+            # Another run may have pushed since checkout; rebase rather than fail.
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push
+          fi
+
+      - name: Assemble Pages site
+        if: success()
+        run: |
+          mkdir -p site
+          cp build/dashboard.html site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        if: success()
+        with:
+          path: site
+
+      # A failed brief is silent otherwise - you would just not get an email, which
+      # is indistinguishable from a quiet market.
+      - name: Upload debug output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brief-debug
+          path: build/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy-dashboard:
+    needs: brief
+    if: needs.brief.result == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      # Requires Settings -> Pages -> Source set to "GitHub Actions".
+      - id: deploy
+        uses: actions/deploy-pages@v4

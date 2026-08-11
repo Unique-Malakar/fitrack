@@ -1,0 +1,254 @@
+[
+ {
+  "auctionDate": "2026-08-08T00:00:00",
+  "bidToCoverRatio": "2.498951",
+  "highYield": "4.4948",
+  "issueDate": "2026-08-11T00:00:00",
+  "offeringAmount": "30000000000",
+  "securityTerm": "2-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-07-28T00:00:00",
+  "bidToCoverRatio": "2.634553",
+  "highYield": "4.5327",
+  "issueDate": "2026-07-31T00:00:00",
+  "offeringAmount": "25000000000",
+  "securityTerm": "3-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-07-17T00:00:00",
+  "bidToCoverRatio": "2.618436",
+  "highYield": "4.6457",
+  "issueDate": "2026-07-20T00:00:00",
+  "offeringAmount": "70000000000",
+  "securityTerm": "5-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-07-06T00:00:00",
+  "bidToCoverRatio": "2.590781",
+  "highYield": "4.2967",
+  "issueDate": "2026-07-09T00:00:00",
+  "offeringAmount": "58000000000",
+  "securityTerm": "7-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-06-25T00:00:00",
+  "bidToCoverRatio": "2.390297",
+  "highYield": "4.4176",
+  "issueDate": "2026-06-28T00:00:00",
+  "offeringAmount": "58000000000",
+  "securityTerm": "10-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-06-14T00:00:00",
+  "bidToCoverRatio": "2.288438",
+  "highYield": "4.1661",
+  "issueDate": "2026-06-17T00:00:00",
+  "offeringAmount": "42000000000",
+  "securityTerm": "20-Year",
+  "securityType": "Bond"
+ },
+ {
+  "auctionDate": "2026-06-03T00:00:00",
+  "bidToCoverRatio": "2.812018",
+  "highYield": "3.9534",
+  "issueDate": "2026-06-06T00:00:00",
+  "offeringAmount": "30000000000",
+  "securityTerm": "30-Year",
+  "securityType": "Bond"
+ },
+ {
+  "auctionDate": "2026-05-23T00:00:00",
+  "bidToCoverRatio": "2.806331",
+  "highYield": "4.7004",
+  "issueDate": "2026-05-26T00:00:00",
+  "offeringAmount": "58000000000",
+  "securityTerm": "2-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-05-12T00:00:00",
+  "bidToCoverRatio": "2.337786",
+  "highYield": "4.9138",
+  "issueDate": "2026-05-15T00:00:00",
+  "offeringAmount": "58000000000",
+  "securityTerm": "3-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-05-01T00:00:00",
+  "bidToCoverRatio": "2.578441",
+  "highYield": "4.3038",
+  "issueDate": "2026-05-04T00:00:00",
+  "offeringAmount": "42000000000",
+  "securityTerm": "5-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-04-20T00:00:00",
+  "bidToCoverRatio": "2.477310",
+  "highYield": "4.5138",
+  "issueDate": "2026-04-23T00:00:00",
+  "offeringAmount": "25000000000",
+  "securityTerm": "7-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-04-09T00:00:00",
+  "bidToCoverRatio": "2.433864",
+  "highYield": "4.5074",
+  "issueDate": "2026-04-12T00:00:00",
+  "offeringAmount": "58000000000",
+  "securityTerm": "10-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-03-29T00:00:00",
+  "bidToCoverRatio": "2.852472",
+  "highYield": "4.5470",
+  "issueDate": "2026-04-01T00:00:00",
+  "offeringAmount": "30000000000",
+  "securityTerm": "20-Year",
+  "securityType": "Bond"
+ },
+ {
+  "auctionDate": "2026-03-18T00:00:00",
+  "bidToCoverRatio": "2.144499",
+  "highYield": "3.9781",
+  "issueDate": "2026-03-21T00:00:00",
+  "offeringAmount": "42000000000",
+  "securityTerm": "30-Year",
+  "securityType": "Bond"
+ },
+ {
+  "auctionDate": "2026-03-07T00:00:00",
+  "bidToCoverRatio": "2.993812",
+  "highYield": "4.8475",
+  "issueDate": "2026-03-10T00:00:00",
+  "offeringAmount": "70000000000",
+  "securityTerm": "2-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-02-24T00:00:00",
+  "bidToCoverRatio": "2.827169",
+  "highYield": "4.7752",
+  "issueDate": "2026-02-27T00:00:00",
+  "offeringAmount": "58000000000",
+  "securityTerm": "3-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-02-13T00:00:00",
+  "bidToCoverRatio": "2.742531",
+  "highYield": "4.3289",
+  "issueDate": "2026-02-16T00:00:00",
+  "offeringAmount": "58000000000",
+  "securityTerm": "5-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-02-02T00:00:00",
+  "bidToCoverRatio": "2.587698",
+  "highYield": "4.3419",
+  "issueDate": "2026-02-05T00:00:00",
+  "offeringAmount": "25000000000",
+  "securityTerm": "7-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-01-22T00:00:00",
+  "bidToCoverRatio": "2.778659",
+  "highYield": "4.7338",
+  "issueDate": "2026-01-25T00:00:00",
+  "offeringAmount": "44000000000",
+  "securityTerm": "10-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2026-01-11T00:00:00",
+  "bidToCoverRatio": "2.822134",
+  "highYield": "4.5285",
+  "issueDate": "2026-01-14T00:00:00",
+  "offeringAmount": "25000000000",
+  "securityTerm": "20-Year",
+  "securityType": "Bond"
+ },
+ {
+  "auctionDate": "2025-12-31T00:00:00",
+  "bidToCoverRatio": "2.810057",
+  "highYield": "4.6710",
+  "issueDate": "2026-01-03T00:00:00",
+  "offeringAmount": "44000000000",
+  "securityTerm": "30-Year",
+  "securityType": "Bond"
+ },
+ {
+  "auctionDate": "2025-12-20T00:00:00",
+  "bidToCoverRatio": "2.491415",
+  "highYield": "4.6670",
+  "issueDate": "2025-12-23T00:00:00",
+  "offeringAmount": "30000000000",
+  "securityTerm": "2-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2025-12-09T00:00:00",
+  "bidToCoverRatio": "3.100370",
+  "highYield": "4.0032",
+  "issueDate": "2025-12-12T00:00:00",
+  "offeringAmount": "70000000000",
+  "securityTerm": "3-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2025-11-28T00:00:00",
+  "bidToCoverRatio": "2.660742",
+  "highYield": "4.5873",
+  "issueDate": "2025-12-01T00:00:00",
+  "offeringAmount": "44000000000",
+  "securityTerm": "5-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2025-11-17T00:00:00",
+  "bidToCoverRatio": "2.671998",
+  "highYield": "4.2843",
+  "issueDate": "2025-11-20T00:00:00",
+  "offeringAmount": "70000000000",
+  "securityTerm": "7-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2025-11-06T00:00:00",
+  "bidToCoverRatio": "2.546272",
+  "highYield": "4.4127",
+  "issueDate": "2025-11-09T00:00:00",
+  "offeringAmount": "70000000000",
+  "securityTerm": "10-Year",
+  "securityType": "Note"
+ },
+ {
+  "auctionDate": "2025-10-26T00:00:00",
+  "bidToCoverRatio": "2.815356",
+  "highYield": "4.1448",
+  "issueDate": "2025-10-29T00:00:00",
+  "offeringAmount": "70000000000",
+  "securityTerm": "20-Year",
+  "securityType": "Bond"
+ },
+ {
+  "auctionDate": "2025-10-15T00:00:00",
+  "bidToCoverRatio": "2.926690",
+  "highYield": "4.8825",
+  "issueDate": "2025-10-18T00:00:00",
+  "offeringAmount": "25000000000",
+  "securityTerm": "30-Year",
+  "securityType": "Bond"
+ }
+]

@@ -1,0 +1,63 @@
+name: Market Alerts
+
+# Cadence note. The plan asked for intraday checks every 2-4 hours. That is not
+# achievable honestly on the free tier:
+#   * Alpha Vantage allows 25 requests/day and the morning brief already spends 14.
+#   * More decisively, the highest-value triggers (VIX, HY and IG spreads, NFCI,
+#     Treasury yields, USD/JPY) are FRED series that publish once per day. Polling
+#     them hourly cannot surface anything the previous poll did not already see.
+# So this runs twice on weekdays: once after the US close, when the daily FRED
+# values land, and once early enough to catch the overnight session's damage
+# before the open. Each trigger has a cooldown, so a persistent condition emails
+# once rather than every run.
+
+on:
+  schedule:
+    - cron: "0 22 * * 1-5"   # 22:00 UTC - after the US close, daily values posted
+    - cron: "0 9  * * 1-5"   # 09:00 UTC - pre-open, catches the overnight move
+  workflow_dispatch:
+
+concurrency:
+  group: market-alerts
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check alert triggers
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python -m src.main --alerts
+
+      # Cooldown state must persist between runs or every alert re-fires.
+      - name: Persist alert state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/alert_state.json
+          if git diff --staged --quiet; then
+            echo "No alert state change."
+          else
+            git commit -m "data: alert state $(date -u +%Y-%m-%dT%H:%M)"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push
+          fi

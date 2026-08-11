@@ -1,0 +1,10 @@
+# The core pipeline is stdlib-only and needs nothing here. This exists solely for
+# the optional yfinance fallback, used when Alpha Vantage cannot supply a symbol.
+#
+#   pip install -r requirements.txt
+#
+# Deliberately NOT used: fredapi (a thin wrapper over the same REST endpoint that
+# pulls in pandas) and pandas itself (unnecessary for ~40 series of moving-average
+# and percentile arithmetic). Fewer dependencies means fewer ways for a 6am cron
+# job to break.
+yfinance>=0.2.40 ; python_version >= "3.9"

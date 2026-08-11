@@ -1,0 +1,37 @@
+{
+  "_comment": [
+    "Alpha Vantage symbols. Free tier is 25 requests/day, so this list must stay under ~20 to",
+    "leave headroom for a retry. Each entry costs exactly ONE TIME_SERIES_DAILY call, which",
+    "returns ~100 trading days (compact) - enough for 1w/1m/3m relative strength without any",
+    "extra requests. Do NOT use GLOBAL_QUOTE: same request cost, only one day of data.",
+    "`role`: benchmark | breadth | sector | global"
+  ],
+  "symbols": [
+    {"symbol": "SPY",  "name": "S&P 500 (cap-weighted)",   "role": "benchmark", "pillar": 5},
+    {"symbol": "RSP",  "name": "S&P 500 (equal-weighted)", "role": "breadth",   "pillar": 5},
+
+    {"symbol": "XLK",  "name": "Technology",               "role": "sector", "pillar": 6},
+    {"symbol": "XLE",  "name": "Energy",                   "role": "sector", "pillar": 6},
+    {"symbol": "XLV",  "name": "Healthcare",               "role": "sector", "pillar": 6},
+    {"symbol": "XLF",  "name": "Financials",               "role": "sector", "pillar": 6},
+    {"symbol": "XLI",  "name": "Industrials",              "role": "sector", "pillar": 6},
+    {"symbol": "XLP",  "name": "Consumer Staples",         "role": "sector", "pillar": 6},
+    {"symbol": "XLY",  "name": "Consumer Discretionary",   "role": "sector", "pillar": 6},
+    {"symbol": "XLU",  "name": "Utilities",                "role": "sector", "pillar": 6},
+    {"symbol": "XLRE", "name": "Real Estate",              "role": "sector", "pillar": 6},
+    {"symbol": "XLC",  "name": "Communication Services",   "role": "sector", "pillar": 6},
+    {"symbol": "XLB",  "name": "Materials",                "role": "sector", "pillar": 6},
+
+    {"symbol": "GLD",  "name": "Gold (GLD ETF)",           "role": "global", "pillar": 6,
+     "note": "Replaces the deleted FRED series GOLDAMGBD228NLBM. GLD tracks spot gold less ~0.40%/yr expense drag; fine for direction and rate-of-change, not for an absolute spot price."}
+  ],
+  "deferred": [
+    {"symbol": "USDJPY", "reason": "FX needs the CURRENCY_EXCHANGE_RATE / FX_DAILY endpoint, not TIME_SERIES_DAILY. Add once live keys confirm free-tier FX access, which Alpha Vantage has restricted before."},
+    {"symbol": "BTC-USD", "reason": "Needs DIGITAL_CURRENCY_DAILY. Deferred to keep Phase 1 within the 25/day cap with retry headroom."}
+  ],
+  "budget": {
+    "free_tier_daily_limit": 25,
+    "requests_per_run": 14,
+    "note": "14 of 25 used by the morning run. The remaining 11 are retry headroom. Phase 3 intraday alerting does NOT fit in this budget - see README."
+  }
+}

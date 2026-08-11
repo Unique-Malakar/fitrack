@@ -1,0 +1,10 @@
+.env
+build/
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+venv/
+
+# Snapshots in data/daily/ ARE committed on purpose: they are the historical
+# dataset the Phase 4 dashboard will chart, and the CI job pushes them back.

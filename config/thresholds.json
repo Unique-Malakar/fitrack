@@ -1,0 +1,69 @@
+{
+  "_comment": [
+    "Tunable scoring parameters. Per spec 2.3 there are no hard universal LEVEL thresholds",
+    "(no 'claims above 300K = bad'). Levels are scored against each series' own trailing",
+    "distribution; momentum is scored against each series' own volatility. The numbers here",
+    "govern the STATISTICS, not any indicator's absolute value."
+  ],
+
+  "history_years": 3,
+  "_history_years_note": "Trailing window used to build each series' percentile and z-score baseline.",
+
+  "fetch_years": 12,
+  "_fetch_years_note": "How much history to DOWNLOAD, as opposed to score against. These must differ: the replay needs a full history_years warmup before its first scoreable date, so downloading only ~4 years left barely 11 months of replay - too thin a sample to calibrate on, and it produced a misleading '76% one regime' warning. FRED is free and unlimited, so download generously. 12 years covers 2014 onward, spanning a hiking cycle, a crash, an inflation shock and a cutting cycle.",
+
+  "level_percentile_bands": {
+    "_note": "Percentile of the latest value within its trailing window -> level score in [-1, 1], oriented along the pillar axis before polarity is applied.",
+    "very_low": 10,
+    "low": 30,
+    "high": 70,
+    "very_high": 90
+  },
+
+  "momentum": {
+    "_note": "Momentum compares the short MA to the long MA, expressed in standard deviations of the series' own period-over-period changes. Beyond `strong_sigma` counts as a decisive move.",
+    "short_window": 4,
+    "long_window": 13,
+    "strong_sigma": 1.0,
+    "mild_sigma": 0.35
+  },
+
+  "anchor_weight": 0.5,
+  "_anchor_weight_note": "How much a STRUCTURAL boundary crossing (curve inversion, Sahm 0.50, NFCI 0) pulls the level score toward its extreme, blended with the percentile score.",
+
+  "pillar_state_bands": {
+    "_note": "Weighted pillar score in [-1, 1] -> state name. Bands are symmetric; each pillar's axis direction is defined in fred_series.json.",
+    "strong_negative": -0.40,
+    "mild_negative": -0.13,
+    "mild_positive": 0.13,
+    "strong_positive": 0.40
+  },
+
+  "pillar_states": {
+    "1": {"axis": "up = expanding",        "labels": ["Contracting", "Slowing", "Steady", "Expanding", "Booming"]},
+    "2": {"axis": "up = hotter",           "labels": ["Deflationary", "Cooling", "Sticky", "Hot", "Very Hot"]},
+    "3": {"axis": "up = tighter",          "labels": ["Easing", "Loosening", "Neutral", "Tightening", "Very Tight"]},
+    "4": {"axis": "up = more stress",      "labels": ["Ample", "Adequate", "Adequate", "Draining", "Stressed"]},
+    "5": {"axis": "up = healthier",        "labels": ["Deteriorating", "Narrowing", "Mixed", "Healthy", "Broadening"]}
+  },
+
+  "breadth": {
+    "_note": "RSP/SPY ratio drives the breadth read. Thresholds are in percentage points of relative performance over the window.",
+    "windows_days": {"1w": 5, "1m": 21, "3m": 63},
+    "narrow_pp": -1.0,
+    "broad_pp": 1.0
+  },
+
+  "min_coverage": {
+    "_note": "If fewer than this fraction of a pillar's weighted indicators return data, the pillar reports Unknown rather than guessing from a thin sample.",
+    "fraction": 0.6
+  },
+
+  "staleness_days": {
+    "_note": "Max age before a series is treated as stale. These must account for how FRED DATES observations, not just how often they publish: a monthly series is dated by its REFERENCE MONTH START, so June CPI is dated 2026-06-01 but published mid-July. On 11 August that current print is already 71 days old. Limits set below 100 therefore discard the newest available data as 'stale' in the days before the next release - which collapsed Inflation to 33% coverage on the first live run. Each limit allows the normal reference-to-publication lag plus roughly one missed release.",
+    "daily": 10,
+    "weekly": 24,
+    "monthly": 100,
+    "quarterly": 250
+  }
+}
