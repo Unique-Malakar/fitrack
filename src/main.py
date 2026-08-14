@@ -80,9 +80,14 @@ def run(args):
         args.fixtures, args.record)
     print("  %d ok, %d failed" % (len(raw), len(errors)))
 
-    print("Fetching %d Alpha Vantage symbols..." % len(av_specs))
+    # The alert check only inspects SPY (for the single-session drawdown trigger),
+    # so pulling the full symbol list on every alert run burned 13 requests a time
+    # against a 25/day cap shared with the morning brief.
+    fetch_specs = ([s for s in av_specs if s["symbol"] == "SPY"]
+                   if args.alerts else av_specs)
+    print("Fetching %d Alpha Vantage symbol(s)..." % len(fetch_specs))
     market_series, av_errors = av_fetcher.fetch_all(
-        av_specs, av_key, args.fixtures, args.record,
+        fetch_specs, av_key, args.fixtures, args.record,
         av_cfg["budget"]["free_tier_daily_limit"])
     print("  %d ok, %d failed" % (len(market_series), len(av_errors)))
 
@@ -185,7 +190,10 @@ def run(args):
     }
     subject, text_body, html_body = email_builder.build(ctx)
 
-    store.save_snapshot(today, pillars, diagnosis, readings, sigs, errors)
+    if args.fixtures:
+        print("Fixture mode: snapshot not saved (fabricated data stays out of history).")
+    else:
+        store.save_snapshot(today, pillars, diagnosis, readings, sigs, errors)
 
     # ---- Debt & debasement chain
     chain_stages, chain_summary = chain.evaluate(

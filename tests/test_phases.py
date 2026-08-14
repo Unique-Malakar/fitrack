@@ -608,3 +608,25 @@ class TestSecretRedaction(unittest.TestCase):
             self.assertNotIn("TESTKEY1234567890", _json.dumps(payload))
         finally:
             store.DAILY_DIR = original
+
+
+class TestFixtureCoverage(unittest.TestCase):
+    """Adding a series to config without regenerating fixtures broke every offline
+    run with a confusing "no fixture recorded" error. Catch it at test time."""
+
+    def test_every_configured_fred_series_has_a_fixture(self):
+        with open(os.path.join(ROOT, "config", "fred_series.json")) as fh:
+            series = json.load(fh)["series"]
+        missing = [s["id"] for s in series
+                   if not os.path.exists(os.path.join(
+                       ROOT, "tests", "fixtures", "fred_%s.json" % s["id"]))]
+        self.assertEqual(missing, [],
+                         "missing fixtures (run tools/make_fixtures.py): %s" % missing)
+
+    def test_every_configured_symbol_has_a_fixture(self):
+        with open(os.path.join(ROOT, "config", "av_symbols.json")) as fh:
+            symbols = json.load(fh)["symbols"]
+        missing = [s["symbol"] for s in symbols
+                   if not os.path.exists(os.path.join(
+                       ROOT, "tests", "fixtures", "av_%s.json" % s["symbol"]))]
+        self.assertEqual(missing, [], "missing fixtures: %s" % missing)

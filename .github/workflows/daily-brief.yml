@@ -58,10 +58,13 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
-          if [ "${{ inputs.dry_run }}" = "false" ]; then
-            python -m src.main --dashboard
-          else
+          # inputs.dry_run is "" on a schedule event, "true"/"false" on manual runs.
+          # Test for "true" so a scheduled run falls through and actually sends.
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "Dry run: building only, no email."
             python -m src.main --dashboard --dry-run
+          else
+            python -m src.main --dashboard
           fi
 
       - name: Check what was produced
@@ -90,7 +93,7 @@ jobs:
       # The snapshot history is the dataset the dashboard charts, so it has to
       # survive the runner being destroyed.
       - name: Commit snapshot
-        if: always() && steps.check.outputs.built == 'true' && inputs.dry_run == false
+        if: always() && steps.check.outputs.built == 'true' && inputs.dry_run != true
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
