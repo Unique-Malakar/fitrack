@@ -25,7 +25,91 @@ Dark mode is a selected set of steps for the dark surface, not an inversion.
 """
 from __future__ import annotations
 
+import re
+
 from .email_builder import _esc
+
+# Plain-language layer. The page was written fluent in its own vocabulary, which is
+# useless to a reader who has to decode it first. Every piece of jargon that survives
+# on the page now carries a tap-or-hover explanation, and the verdict is restated in
+# ordinary words before any number appears.
+
+PLAIN_REGIME = {
+    "Goldilocks": "Growth is solid and inflation is behaving. About as good as it gets "
+                  "for shares.",
+    "Reflation": "The economy is picking up from a soft patch while policy is still "
+                 "supportive. Generally good for shares.",
+    "Overheating": "Growth is strong but inflation is running hot, so the Fed is likely "
+                   "to lean against it. Good for commodities, awkward for bonds.",
+    "Stagflation": "Growth is slowing while inflation stays high. The hardest backdrop, "
+                   "because shares and bonds can fall at the same time.",
+    "Risk-Off": "The economy is contracting and lenders are nervous. Money moves toward "
+                "safety - cash, government bonds, gold.",
+    "Late Cycle": "Growth is still positive but fading, and fewer shares are driving the "
+                  "gains. A time to prefer quality over speculation.",
+    "Indeterminate": "Not enough data arrived to reach a verdict today.",
+}
+
+# Standalone sentences. Splicing these onto the end of a regime description as a
+# clause produced run-ons like "prefer quality over speculation and conditions are
+# getting worse".
+PLAIN_DIRECTION = {
+    "Improving": "Right now conditions are improving.",
+    "Deteriorating": "Right now conditions are getting worse.",
+    "Stable": "Conditions are holding steady.",
+    "Unknown": "The direction of travel is unclear.",
+}
+
+HELP = {
+    "regime": "The overall type of market we are in, picked from six named states by "
+              "comparing today's five pillar scores against what each state normally "
+              "looks like.",
+    "confidence": "How clearly today's reading matches one regime rather than sitting "
+                  "between two. Low confidence is not an error - it means the market is "
+                  "genuinely ambiguous right now.",
+    "direction": "Whether conditions improved or worsened since the last reading. This "
+                 "matters more than the level: things getting worse from a good place is "
+                 "usually more informative than a bad level that is stabilising.",
+    "favoured": "What this type of market has historically been kind to. Context for "
+                "your own thinking, not advice, and never a prediction.",
+    "pillar": "One of five forces that together describe the economy. Each is scored "
+              "from -1 to +1 by combining its own indicators.",
+    "score": "Where this pillar sits on its own scale, from -1 to +1. Note each pillar "
+             "points a different way: on Growth, higher means expanding; on Credit, "
+             "higher means more stress.",
+    "coverage": "How much of the underlying data actually arrived. Below 60% the pillar "
+                "reports Unknown instead of guessing from a thin sample.",
+    "signals": "These only appear when two indicators disagree in a specific, named way. "
+               "A single number moving is usually noise; two of them contradicting each "
+               "other is the part worth reading.",
+    "percentile": "Where today's value sits within this indicator's own past three "
+                  "years. 90 means higher than 90% of that period. Used instead of fixed "
+                  "thresholds, which go stale as decades pass.",
+    "breadth": "Whether a rise is broad or narrow. Compares the average share (equal "
+               "weight) against the index (dominated by the biggest companies). If the "
+               "index rises while the average share falls, few names are carrying it - "
+               "which is fragile.",
+    "sector": "How each slice of the market performed against the S&P 500. Positive "
+              "means it beat the index; it does not mean it went up.",
+    "chain": "A popular theory that government debt forces money-printing, which "
+             "devalues the currency and inflates asset prices. Tracked as five stages "
+             "that are each allowed to report NOT happening.",
+    "timeline": "Which regime was in force over the past several years, replayed from "
+                "today's data. Useful for seeing whether the current reading is new or "
+                "has been running a while.",
+    "stale": "The newest published figure is older than expected for this indicator - it "
+             "is still shown, but treat it as lagging.",
+}
+
+
+def _help(key):
+    """Small tap-or-hover explainer beside a term."""
+    text = HELP.get(key)
+    if not text:
+        return ""
+    return ('<span class="help" tabindex="0" role="button" aria-label="%s" '
+            'data-tip="%s">?</span>' % (_esc(text[:100]), _esc(text)))
+
 
 # --- palette (validated: see README) ---------------------------------------
 REGIME_HUES = [
@@ -90,6 +174,53 @@ padding:11px 14px;font-size:13px;margin:0 0 16px;}
 background:#3a2f10;color:#f5d98a;border-color:#5c4a1a;}}
 svg{display:block;max-width:100%;}
 .spark{width:132px;height:30px;}
+.help{display:inline-flex;align-items:center;justify-content:center;width:15px;
+height:15px;border-radius:50%;background:var(--grid);color:var(--ink-2);
+font-size:10px;font-weight:700;margin-left:5px;cursor:help;vertical-align:middle;
+font-family:system-ui,sans-serif;user-select:none;flex:none;}
+.help:hover,.help:focus{background:var(--accent-soft,#d9e6e8);color:var(--ink);
+outline:2px solid transparent;box-shadow:0 0 0 2px var(--ring);}
+.plain{font-size:16px;line-height:1.6;color:var(--ink);margin:14px 0 0;
+max-width:62ch;}
+.readme{background:var(--card);border:1px solid var(--ring);border-radius:10px;
+padding:0;margin:16px 0;}
+.readme summary{padding:14px 20px;font-size:14px;font-weight:600;color:var(--ink);
+list-style:none;cursor:pointer;}
+.readme summary::-webkit-details-marker{display:none;}
+.readme summary::before{content:"▸ ";color:var(--muted);}
+.readme[open] summary::before{content:"▾ ";}
+.readme .body{padding:0 20px 18px;font-size:13.5px;line-height:1.65;
+color:var(--ink-2);max-width:70ch;}
+.readme ol{padding-left:1.2em;margin:8px 0 0;}
+.readme li{margin-bottom:9px;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));
+gap:12px;margin:4px 0 0;}
+.pcard{background:var(--card);border:1px solid var(--ring);border-radius:10px;
+padding:14px 16px 12px;display:flex;flex-direction:column;gap:7px;}
+.pc-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;}
+.pc-name{font-size:14.5px;font-weight:650;color:var(--ink);}
+.pc-state{font-size:12.5px;font-weight:650;white-space:nowrap;}
+.pc-plain{font-size:13px;color:var(--ink-2);line-height:1.5;}
+.pc-sub{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;}
+.split{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);
+gap:22px;align-items:start;}
+@media (max-width:700px){.split{grid-template-columns:1fr;}}
+.maplead{font-size:13px;color:var(--ink-2);line-height:1.6;}
+.more{border:1px solid var(--ring);border-radius:10px;background:var(--card);
+margin:12px 0;overflow:hidden;}
+.more>summary{padding:14px 18px;cursor:pointer;font-size:14px;font-weight:600;
+color:var(--ink);list-style:none;display:flex;justify-content:space-between;
+align-items:center;gap:12px;}
+.more>summary::-webkit-details-marker{display:none;}
+.more>summary::after{content:"+";color:var(--muted);font-size:17px;font-weight:400;
+line-height:1;}
+.more[open]>summary::after{content:"\2212";}
+.more>summary:hover{background:var(--rule-soft,rgba(128,128,128,.06));}
+.more .inner{padding:0 18px 18px;}
+.more .hint{font-size:12px;color:var(--muted);font-weight:400;}
+.section-lead{font-size:13.5px;color:var(--ink-2);line-height:1.6;margin:0 0 12px;
+max-width:66ch;}
 """
 
 TIP_JS = """
@@ -109,6 +240,21 @@ TIP_JS = """
   if(el){show(e,el.getAttribute('data-tip'));}else{hide();}
  });
  document.addEventListener('mouseleave',hide);
+ // Touch devices have no hover, so the explainers must respond to a tap too.
+ document.addEventListener('click',function(e){
+  var el=e.target.closest('[data-tip]');
+  if(el){e.preventDefault();show({clientX:innerWidth/2,clientY:60},
+    el.getAttribute('data-tip'));setTimeout(hide,6000);}
+ });
+ document.addEventListener('keydown',function(e){
+  if(e.key!=='Enter'&&e.key!==' ')return;
+  var el=document.activeElement&&document.activeElement.closest('[data-tip]');
+  if(el){e.preventDefault();var r=el.getBoundingClientRect();
+   show({clientX:r.left,clientY:r.top},el.getAttribute('data-tip'));
+   setTimeout(hide,6000);}
+ });
+ tip.style.maxWidth='min(340px,88vw)';tip.style.whiteSpace='normal';
+ tip.style.lineHeight='1.45';
 })();
 """
 
@@ -220,31 +366,269 @@ def _timeline(records, height=54):
 
 
 # --------------------------------------------------------------- sections
+# Plain-language state descriptions, keyed by (pillar, state label). A beginner
+# cannot act on "Contracting, -0.46"; they can act on a sentence.
+PLAIN_STATE = {
+    (1, "Contracting"): "The economy is shrinking.",
+    (1, "Slowing"): "Still growing, but losing steam.",
+    (1, "Steady"): "Growing at a normal, unremarkable pace.",
+    (1, "Expanding"): "Growing at a healthy clip.",
+    (1, "Booming"): "Growing unusually fast.",
+    (2, "Deflationary"): "Prices are falling - rarer, and its own kind of problem.",
+    (2, "Cooling"): "Price rises are slowing down.",
+    (2, "Sticky"): "Inflation is not falling as fast as hoped.",
+    (2, "Hot"): "Prices are rising faster than the Fed wants.",
+    (2, "Very Hot"): "Inflation is running well above target.",
+    (3, "Easing"): "Borrowing is getting cheaper and easier.",
+    (3, "Loosening"): "Financial conditions are gently improving.",
+    (3, "Neutral"): "Policy is neither helping nor hurting much.",
+    (3, "Tightening"): "Borrowing is getting more expensive.",
+    (3, "Very Tight"): "Money is hard to come by; this pressures everything.",
+    (4, "Ample"): "Lenders are relaxed and money is flowing freely.",
+    (4, "Adequate"): "Credit markets are calm.",
+    (4, "Draining"): "Lenders are getting more cautious.",
+    (4, "Stressed"): "Credit markets are under real strain - watch this closely.",
+    (5, "Deteriorating"): "Share prices are weakening.",
+    (5, "Narrowing"): "The market is rising, but on fewer and fewer names.",
+    (5, "Mixed"): "No clear direction in the stock market.",
+    (5, "Healthy"): "Share prices are rising with decent participation.",
+    (5, "Broadening"): "The rise is spreading across many companies - the healthiest kind.",
+}
+
+# Both ends of each pillar's scale, in ordinary words. The score is meaningless
+# without knowing which direction is which, and each pillar points differently.
+AXIS_ENDS = {
+    1: ("Shrinking", "Growing"),
+    2: ("Prices falling", "Prices surging"),
+    3: ("Easy money", "Tight money"),
+    4: ("Money flowing", "Credit stress"),
+    5: ("Weak market", "Strong market"),
+}
+
+PILLAR_PLAIN_NAME = {
+    1: "The economy",
+    2: "Inflation",
+    3: "Interest rates",
+    4: "Lending & credit",
+    5: "The stock market",
+}
+
+
+def _gauge(score, tone, pillar, width=250, height=44):
+    """A position on a labelled track. Reading a number requires knowing the scale;
+    reading a dot between two words does not."""
+    lo, hi = AXIS_ENDS.get(pillar, ("Low", "High"))
+    color = STATUS.get(tone, STATUS["unknown"])
+    pad, track_y = 4, 15
+    usable = width - 2 * pad
+    x = pad + (max(-1.0, min(1.0, score)) + 1) / 2 * usable
+    mid = pad + usable / 2
+
+    return (
+        '<svg viewBox="0 0 %d %d" style="width:100%%;height:auto;max-width:%dpx;" '
+        'role="img" aria-label="%s on a scale from %s to %s">'
+        '<rect x="%d" y="%d" width="%.1f" height="7" rx="3.5" fill="var(--grid)"/>'
+        '<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="var(--axis)" stroke-width="1"/>'
+        '<circle cx="%.1f" cy="%.1f" r="7" fill="%s" stroke="var(--card)" stroke-width="2.5"/>'
+        '<text x="%d" y="%d" font-size="10.5" fill="var(--muted)" '
+        'font-family="system-ui,sans-serif">%s</text>'
+        '<text x="%d" y="%d" font-size="10.5" fill="var(--muted)" text-anchor="end" '
+        'font-family="system-ui,sans-serif">%s</text>'
+        '</svg>'
+        % (width, height, width, _esc(lo + " to " + hi), _esc(lo), _esc(hi),
+           pad, track_y, usable,
+           mid, track_y - 3, mid, track_y + 10,
+           x, track_y + 3.5, color,
+           pad, height - 6, _esc(lo),
+           width - pad, height - 6, _esc(hi)))
+
+
+def _pillar_cards(ctx):
+    """Five cards instead of a table. A table invites reading every cell; cards
+    invite scanning, which is what this section is for."""
+    P = ['<div class="cards">']
+    for num in (1, 2, 3, 4, 5):
+        p = ctx["pillars"].get(num)
+        if p is None:
+            continue
+        tone = p.risk_tone
+        color = STATUS.get(tone, STATUS["unknown"])
+        plain = PLAIN_STATE.get((num, p.state), "")
+        if not p.known:
+            plain = "Not enough data arrived today to judge this."
+
+        P.append('<div class="pcard">')
+        P.append('<div class="pc-top">'
+                 '<span class="pc-name">%s</span>'
+                 '<span class="pc-state" style="color:%s;">%s %s</span></div>'
+                 % (_esc(PILLAR_PLAIN_NAME.get(num, p.name)), color,
+                    STATUS_GLYPH.get(tone, ""), _esc(p.state)))
+        P.append(_gauge(p.score if p.known else 0.0, tone, num))
+        P.append('<div class="pc-plain">%s</div>' % _esc(plain))
+        P.append('<div class="pc-sub">%s &middot; score %+.2f</div>'
+                 % (_esc(p.name), p.score))
+        P.append('</div>')
+    P.append('</div>')
+    return "".join(P)
+
+
+def _regime_map(ctx):
+    """Where today sits on the growth/inflation plane, with all six regimes shown.
+
+    Growth against inflation is the classic macro frame and the one a beginner picks
+    up fastest: two axes, six named neighbourhoods, one dot. Regime positions come
+    from the SAME profile coordinates the classifier uses, so the picture cannot
+    drift from the verdict.
+
+    Honest limitation: the verdict uses five dimensions and this shows two, so a
+    couple of regimes sit close together here that the classifier separates using
+    credit, policy and breadth. It is an orientation aid, not the decision itself.
+    """
+    from ..engine.regime import PROFILES
+
+    g = ctx["pillars"].get(1)
+    i = ctx["pillars"].get(2)
+    if g is None or i is None or not (g.known and i.known):
+        return ""
+
+    W = H = 300
+    pad = 34
+    span = W - 2 * pad
+
+    def px(v):
+        return pad + (max(-1.0, min(1.0, v)) + 1) / 2 * span
+
+    def py(v):
+        return pad + (1 - (max(-1.0, min(1.0, v)) + 1) / 2) * span
+
+    P = ['<svg viewBox="0 0 %d %d" style="width:100%%;height:auto;max-width:340px;" '
+         'role="img" aria-label="Map of growth against inflation showing the current '
+         'position among six market regimes">' % (W, H)]
+
+    # quadrant grid
+    P.append('<rect x="%d" y="%d" width="%d" height="%d" fill="none" '
+             'stroke="var(--grid)" stroke-width="1" rx="6"/>' % (pad, pad, span, span))
+    P.append('<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="var(--grid)" '
+             'stroke-dasharray="3 3"/>' % (pad, py(0), pad + span, py(0)))
+    P.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="var(--grid)" '
+             'stroke-dasharray="3 3"/>' % (px(0), pad, px(0), pad + span))
+
+    # Regime names at their own profile coordinates. Label placement is explicit
+    # per regime rather than computed: on this 2D plane Reflation and Late Cycle sit
+    # about twelve pixels apart and Goldilocks is close behind, so an automatic rule
+    # stacks all three on the same spot. Offsets fan them apart legibly.
+    label_offset = {
+        "Overheating": (0, -9, "middle"),
+        "Stagflation": (0, -9, "middle"),
+        "Risk-Off": (-7, 3, "end"),
+        "Late Cycle": (-6, -9, "end"),
+        "Reflation": (7, -9, "start"),
+        "Goldilocks": (4, 15, "start"),
+    }
+    for name, prof in PROFILES.items():
+        x, y = px(prof[1]), py(prof[2])
+        dx, dy, anchor = label_offset.get(name, (0, -9, "middle"))
+        P.append('<circle cx="%.1f" cy="%.1f" r="3" fill="%s" opacity="0.6"/>'
+                 % (x, y, REGIME_LIGHT.get(name, "#898781")))
+        P.append('<text x="%.1f" y="%.1f" font-size="9.5" text-anchor="%s" '
+                 'fill="var(--muted)" font-family="system-ui,sans-serif">%s</text>'
+                 % (x + dx, y + dy, anchor, _esc(name)))
+
+    # you are here
+    cx, cy = px(g.score), py(i.score)
+    P.append('<circle cx="%.1f" cy="%.1f" r="13" fill="%s" opacity="0.16"/>'
+             % (cx, cy, STATUS["bad"]))
+    P.append('<circle cx="%.1f" cy="%.1f" r="6.5" fill="%s" stroke="var(--card)" '
+             'stroke-width="2.5"><title>Today</title></circle>'
+             % (cx, cy, STATUS["bad"]))
+
+    # axis labels
+    P.append('<text x="%d" y="%d" font-size="10.5" fill="var(--ink-2)" '
+             'text-anchor="middle" font-family="system-ui,sans-serif" '
+             'font-weight="600">Economy growing &#8594;</text>'
+             % (W // 2, H - 8))
+    P.append('<text transform="rotate(-90 12 %d)" x="12" y="%d" font-size="10.5" '
+             'fill="var(--ink-2)" text-anchor="middle" '
+             'font-family="system-ui,sans-serif" font-weight="600">'
+             'Inflation rising &#8594;</text>' % (H // 2, H // 2))
+    P.append('</svg>')
+    return "".join(P)
+
 
 def _hero(ctx):
     d = ctx["diagnosis"]
     P = ['<div class="card">', '<h1>Market Regime</h1>',
          '<div class="sub">%s</div>' % _esc(ctx["date"].strftime("%A, %d %B %Y")),
-         '<div class="hero">%s</div>' % _esc(d.regime)]
+         '<div class="hero">%s%s</div>' % (_esc(d.regime), _help("regime"))]
     tone = {"Improving": "good", "Deteriorating": "bad"}.get(d.direction, "watch")
     P.append('<div style="margin-top:6px;">')
-    P.append('<span class="chip" style="color:%s;">%s %s</span>'
-             % (STATUS[tone], STATUS_GLYPH[tone], _esc(d.direction)))
-    P.append('<span class="chip" style="color:var(--ink-2);">confidence %.0f%%</span>'
-             % (d.confidence * 100))
+    P.append('<span class="chip" style="color:%s;">%s %s%s</span>'
+             % (STATUS[tone], STATUS_GLYPH[tone], _esc(d.direction), _help("direction")))
+    P.append('<span class="chip" style="color:var(--ink-2);">confidence %.0f%%%s</span>'
+             % (d.confidence * 100, _help("confidence")))
     if d.runner_up and d.confidence < 0.55:
         P.append('<span class="chip" style="color:var(--ink-2);">near %s</span>'
                  % _esc(d.runner_up))
     P.append('</div>')
+
+    # The verdict restated in ordinary words, before any number appears. A reader who
+    # does not already know what "Late Cycle" means gets nothing from the label alone.
+    plain = PLAIN_REGIME.get(d.regime)
+    if plain:
+        tail = PLAIN_DIRECTION.get(d.direction, "")
+        P.append('<div class="plain"><strong>In plain terms:</strong> %s</div>'
+                 % _esc((plain + " " + tail).strip()))
+    if d.runner_up and d.confidence < 0.55:
+        P.append('<div style="font-size:13px;color:var(--ink-2);margin-top:8px;">'
+                 'This reading sits close to <strong>%s</strong>, so treat the label as '
+                 'provisional rather than settled.</div>' % _esc(d.runner_up))
     P.append('<div class="grid2" style="margin-top:18px;">')
     for label, key, color in (("Favored", "favored", STATUS["good"]),
                               ("Disfavored", "disfavored", STATUS["bad"])):
         P.append('<div><div style="font-size:11px;letter-spacing:.8px;'
-                 'text-transform:uppercase;color:%s;font-weight:700;">%s</div>'
+                 'text-transform:uppercase;color:%s;font-weight:700;">%s%s</div>'
                  '<div style="font-size:13px;color:var(--ink-2);margin-top:3px;">%s</div></div>'
-                 % (color, label, _esc(d.flows.get(key, "-"))))
+                 % (color, label, _help("favoured") if key == "favored" else "",
+                    _esc(d.flows.get(key, "-"))))
     P.append('</div></div>')
     return "".join(P)
+
+
+def _howto_section():
+    """Reading order, stated on the page. The section sequence encodes priority -
+    verdict, then warnings, then reasoning, then evidence - and that is invisible
+    unless it is said out loud."""
+    return (
+        '<details class="readme"><summary>How to read this page</summary>'
+        '<div class="body">'
+        '<p>Sections run in order of importance. On a normal day you can stop after '
+        'the second one.</p>'
+        '<ol>'
+        '<li><strong>The verdict at the top</strong> &mdash; what kind of market this '
+        'is, in one word plus a plain-English sentence. If nothing else, read this.</li>'
+        '<li><strong>Cross-asset signals</strong> &mdash; the only section that is '
+        'sometimes empty, and the most valuable when it is not. It appears when two '
+        'indicators contradict each other, which is where the useful information '
+        'tends to be.</li>'
+        '<li><strong>Pillar scores</strong> &mdash; the five forces behind the '
+        'verdict. Read this when you want to know <em>why</em>.</li>'
+        '<li><strong>Debt &amp; debasement chain</strong> &mdash; a specific theory, '
+        'tracked stage by stage. Each stage may read NOT FIRING, and often does.</li>'
+        '<li><strong>Regime history</strong> &mdash; whether today is a change or '
+        'more of the same.</li>'
+        '<li><strong>Sector strength</strong> &mdash; where money actually moved, '
+        'measured against the S&amp;P rather than in absolute terms.</li>'
+        '<li><strong>Pillar drill-down</strong> &mdash; every underlying number. '
+        'Reference material, not daily reading.</li>'
+        '</ol>'
+        '<p>Tap or hover any <span class="help" data-tip="Like this one. Every '
+        'circled question mark explains the term next to it.">?</span> for an '
+        'explanation of the term beside it.</p>'
+        '<p><strong>Two things this page is not.</strong> It carries no news '
+        'headlines &mdash; only measured data, because conditions are more useful '
+        'than commentary. And nothing here is advice or a forecast: it describes '
+        'what is happening now, not what happens next.</p>'
+        '</div></details>')
 
 
 def _alerts_section(alerts):
@@ -262,8 +646,9 @@ def _alerts_section(alerts):
 
 
 def _pillars_section(ctx):
-    P = ['<div class="card">', '<h2>Pillar scores</h2>', '<div class="scroll"><table>',
-         '<tr><th>Pillar</th><th>State</th><th>Score</th><th></th><th>Coverage</th></tr>']
+    P = ['<div class="card">', '<h2>Pillar scores%s</h2>' % _help("pillar"), '<div class="scroll"><table>',
+         '<tr><th>Pillar</th><th>State</th><th>Score%s</th><th></th>'
+         '<th>Coverage%s</th></tr>' % (_help("score"), _help("coverage"))]
     for num in (1, 2, 3, 4, 5):
         p = ctx["pillars"].get(num)
         if p is None:
@@ -288,10 +673,10 @@ def _pillars_section(ctx):
 
 def _timeline_section(records):
     if not records:
-        return ('<div class="card"><h2>Regime history</h2>'
+        return ('<div class="card"><h2>Regime history%s</h2>'
                 '<div class="note">No history yet. Once real API keys are configured, '
-                'the replay tool backfills roughly three years from the data each run '
-                'already pulls.</div></div>')
+                'the replay tool backfills several years from the data each run '
+                'already pulls.</div></div>' % _help("timeline"))
 
     from ..engine.backfill import regime_episodes
     episodes = regime_episodes(records)
@@ -300,7 +685,7 @@ def _timeline_section(records):
         if ep["regime"] not in seen:
             seen.append(ep["regime"])
 
-    P = ['<div class="card">', '<h2>Regime history</h2>', _timeline(records)]
+    P = ['<div class="card">', '<h2>Regime history%s</h2>' % _help("timeline"), _timeline(records)]
     P.append('<div class="legend">')
     for name in seen:
         P.append('<span><i class="sw" style="background:%s;"></i>%s</span>'
@@ -328,7 +713,7 @@ def _sectors_section(ctx):
     if not rows:
         return ""
     vmax = max([abs(r["rs"].get("1m") or 0) for r in rows] + [1.0])
-    P = ['<div class="card">', '<h2>Sector relative strength vs SPY</h2>',
+    P = ['<div class="card">', '<h2>Sector relative strength vs SPY%s</h2>' % _help("sector"),
          '<div class="scroll"><table>',
          '<tr><th>Sector</th><th>1W</th><th>1M</th><th>3M</th><th>1M chart</th></tr>']
     for r in rows:
@@ -365,8 +750,9 @@ def _drilldown_section(ctx, history):
                  '<span style="color:var(--muted);font-weight:400;font-size:12px;">%s</span></div>'
                  % (_esc(PILLAR_NAMES.get(num, "")), _esc(p.axis)))
         P.append('<div class="scroll"><table>'
-                 '<tr><th>Indicator</th><th>Value</th><th>1W</th><th>Percentile</th>'
-                 '<th>Direction</th><th>History</th></tr>')
+                 '<tr><th>Indicator</th><th>Value</th><th>1W</th>'
+                 '<th>Percentile%s</th><th>Direction</th><th>History</th></tr>'
+                 % _help("percentile"))
         for r in p.readings:
             series = history.get(r.sid) or []
             pct = "-" if r.percentile is None else "%.0f" % r.percentile
@@ -393,7 +779,7 @@ def _signals_section(ctx):
     sigs = ctx.get("signals") or []
     if not sigs:
         return ""
-    P = ['<div class="card">', '<h2>Cross-asset signals</h2>']
+    P = ['<div class="card">', '<h2>Cross-asset signals%s</h2>' % _help("signals")]
     for s in sigs:
         color = {"alert": STATUS["bad"], "watch": STATUS["watch"]}.get(s.tone, STATUS["good"])
         P.append('<div style="border-left:3px solid %s;padding:9px 13px;margin:9px 0;">'
@@ -417,7 +803,7 @@ def _chain_section(stages, summary):
 
     from ..engine.chain import FIRING, BUILDING, NOT_FIRING
 
-    P = ['<div class="card">', '<h2>Debt &amp; debasement chain</h2>']
+    P = ['<div class="card">', '<h2>Debt &amp; debasement chain%s</h2>' % _help("chain")]
     P.append('<div style="font-size:14px;color:var(--ink);margin:-4px 0 4px;">%s</div>'
              % _esc(summary.get("verdict", "")))
     P.append('<div class="legend" style="margin-bottom:6px;">')
@@ -481,9 +867,57 @@ def _not_built_section():
 
 # --------------------------------------------------------------- entrypoint
 
+# The section builders emit a full card. Inside a collapsible the card chrome and
+# the duplicated heading are noise, so strip them rather than maintaining two
+# renderers that could drift apart.
+_CARD_RE = re.compile(r'^<div class="card">\s*(?:<h2>.*?</h2>)?(.*)</div>$', re.S)
+
+
+def _bare(html):
+    if not html:
+        return ""
+    m = _CARD_RE.match(html.strip())
+    return m.group(1) if m else html
+
+
+def _sectors_inner(ctx):
+    return _bare(_sectors_section(ctx))
+
+
+def _timeline_inner(records):
+    return _bare(_timeline_section(records))
+
+
+def _chain_inner(stages, summary):
+    return _bare(_chain_section(stages, summary))
+
+
+def _drilldown_inner(ctx, history):
+    return _bare(_drilldown_section(ctx, history))
+
+
+def _gaps_inner():
+    return _bare(_not_built_section())
+
+
+def _more(title, hint, inner, open_by_default=False):
+    """A collapsed layer. The page should answer the question at a glance and let
+    curiosity, not obligation, pull the reader deeper."""
+    if not inner:
+        return ""
+    return ('<details class="more"%s><summary><span>%s <span class="hint">%s</span>'
+            '</span></summary><div class="inner">%s</div></details>'
+            % (" open" if open_by_default else "", _esc(title), _esc(hint), inner))
+
+
 def build(ctx, records=None, alerts=None, synthetic=False,
           chain_stages=None, chain_summary=None):
-    """Render the full dashboard to a self-contained HTML string."""
+    """Render the full dashboard to a self-contained HTML string.
+
+    Layered on purpose: the verdict, the map and the five cards answer "what is going
+    on" without a single expandable opened. Everything below is one tap away for a
+    reader who wants the evidence.
+    """
     records = records or []
 
     history = {}
@@ -491,20 +925,52 @@ def build(ctx, records=None, alerts=None, synthetic=False,
         for sid, value in rec.get("readings", {}).items():
             history.setdefault(sid, []).append(value)
 
+    map_svg = _regime_map(ctx)
+    map_block = ""
+    if map_svg:
+        map_block = (
+            '<div class="card"><h2>Where we are%s</h2>'
+            '<div class="split"><div>%s</div>'
+            '<div class="maplead"><p>The two forces that shape most market conditions '
+            'are how fast the economy is growing and how fast prices are rising. '
+            'Together they carve out six familiar situations.</p>'
+            '<p><strong>The red dot is today.</strong> The grey labels show where each '
+            'named situation normally sits, so you can see not just where we are but '
+            'what we are drifting toward.</p>'
+            '<p style="font-size:11.5px;color:var(--muted);">The full verdict weighs '
+            'five forces; this picture shows the two biggest. Treat it as orientation, '
+            'not the whole answer.</p></div></div></div>'
+            % (_help("regime"), map_svg))
+
+    signals_inner = _signals_section(ctx)
     body = [
         '<div class="wrap">',
         '<div class="warn">These figures come from <strong>fabricated fixture data</strong> '
         'and are not real market observations. Run with live API keys to replace them.'
         '</div>' if synthetic else "",
+
+        # --- layer 1: the answer ---
         _hero(ctx),
         _alerts_section(alerts or []),
-        _signals_section(ctx),
-        _pillars_section(ctx),
-        _chain_section(chain_stages or [], chain_summary or {}),
-        _timeline_section(records),
-        _sectors_section(ctx),
-        _drilldown_section(ctx, history),
-        _not_built_section(),
+        map_block,
+        '<div class="card"><h2>The five forces%s</h2>'
+        '<p class="section-lead">Each one is measured against its own history. The dot '
+        'shows where today sits between the two extremes.</p>%s</div>'
+        % (_help("pillar"), _pillar_cards(ctx)),
+        signals_inner,
+
+        # --- layer 2: the evidence, one tap away ---
+        _more("Where money is moving", "sector performance vs the S&P 500",
+              _sectors_inner(ctx)),
+        _more("How we got here", "regime history over recent years",
+              _timeline_inner(records)),
+        _more("The debt & debasement theory", "five stages, each testable",
+              _chain_inner(chain_stages or [], chain_summary or {})),
+        _more("Every number behind the verdict", "reference detail",
+              _drilldown_inner(ctx, history)),
+        _more("What this cannot tell you", "known gaps", _gaps_inner()),
+        _howto_section(),
+
         '<div class="note" style="text-align:center;margin-top:22px;">'
         'Generated by market-intel &middot; %s</div>' % _esc(ctx["date"].isoformat()),
         '</div>',
