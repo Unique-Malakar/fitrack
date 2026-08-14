@@ -28,6 +28,7 @@ from __future__ import annotations
 import re
 
 from .email_builder import _esc
+from .explain import INDICATOR_INFO, describe, ordinal, tooltip
 
 # Plain-language layer. The page was written fluent in its own vocabulary, which is
 # useless to a reader who has to decode it first. Every piece of jargon that survives
@@ -94,6 +95,10 @@ HELP = {
     "chain": "A popular theory that government debt forces money-printing, which "
              "devalues the currency and inflates asset prices. Tracked as five stages "
              "that are each allowed to report NOT happening.",
+    "outlook": "Sectors ranked by how well current conditions suit what they are "
+               "exposed to - a statement about positioning, not a forecast. The last "
+               "column shows what prices have actually done, so you can see where the "
+               "market agrees or disagrees.",
     "timeline": "Which regime was in force over the past several years, replayed from "
                 "today's data. Useful for seeing whether the current reading is new or "
                 "has been running a while.",
@@ -215,12 +220,31 @@ align-items:center;gap:12px;}
 .more>summary::-webkit-details-marker{display:none;}
 .more>summary::after{content:"+";color:var(--muted);font-size:17px;font-weight:400;
 line-height:1;}
-.more[open]>summary::after{content:"\2212";}
+.more[open]>summary::after{content:"−";}
 .more>summary:hover{background:var(--rule-soft,rgba(128,128,128,.06));}
 .more .inner{padding:0 18px 18px;}
 .more .hint{font-size:12px;color:var(--muted);font-weight:400;}
 .section-lead{font-size:13.5px;color:var(--ink-2);line-height:1.6;margin:0 0 12px;
 max-width:66ch;}
+.dd-group{font-size:12px;letter-spacing:.9px;text-transform:uppercase;
+color:var(--muted);font-weight:700;margin:22px 0 8px;padding-bottom:6px;
+border-bottom:1px solid var(--grid);}
+.dd-axis{font-weight:400;letter-spacing:0;text-transform:none;font-size:11.5px;}
+.dd-row{padding:11px 0;border-bottom:1px solid var(--rule-soft,rgba(128,128,128,.12));
+display:grid;gap:4px;}
+.dd-row:last-child{border-bottom:none;}
+.dd-head{display:flex;justify-content:space-between;align-items:baseline;gap:14px;}
+.dd-name{font-size:14px;font-weight:600;color:var(--ink);}
+.dd-term{border-bottom:1px dotted var(--muted);cursor:help;}
+.dd-term:hover,.dd-term:focus{border-bottom-color:var(--ink);outline:none;}
+.dd-val{font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;
+font-variant-numeric:tabular-nums;}
+.dd-mean{font-size:13px;color:var(--ink-2);line-height:1.5;max-width:70ch;}
+.dd-foot{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;color:var(--muted);
+font-variant-numeric:tabular-nums;}
+.dd-stale{font-size:10px;color:var(--muted);border:1px solid var(--grid);
+border-radius:3px;padding:0 4px;cursor:help;}
+.dd-spark{margin-top:2px;}
 """
 
 TIP_JS = """
@@ -738,39 +762,64 @@ def _sectors_section(ctx):
 
 
 def _drilldown_section(ctx, history):
-    from ..engine.pillar_scores import PILLAR_NAMES
-    from .email_builder import fmt_value
+    """Every underlying number, with its meaning attached.
 
-    P = ['<div class="card">', '<h2>Pillar drill-down</h2>']
+    A bare "JTSQUR 2.0" teaches nothing. Each row now carries what the indicator is
+    and why it is watched (behind the name), plus a sentence linking today's reading
+    to what it implies. The raw percentile and direction columns are folded into that
+    sentence rather than shown as numbers that need their own decoding.
+    """
+    from ..engine.pillar_scores import PILLAR_NAMES
+    from .email_builder import fmt_change, fmt_value
+
+    P = ['<div class="card">', '<h2>Every number behind the verdict%s</h2>' % _help("percentile"),
+         '<p class="section-lead">Grouped by which of the five forces they feed. '
+         'Tap any indicator name to see what it measures and why it is watched.</p>']
+
     for num in (1, 2, 3, 4, 5):
         p = ctx["pillars"].get(num)
         if p is None or not p.readings:
             continue
-        P.append('<div style="margin:18px 0 6px;font-weight:600;font-size:14px;">%s '
-                 '<span style="color:var(--muted);font-weight:400;font-size:12px;">%s</span></div>'
-                 % (_esc(PILLAR_NAMES.get(num, "")), _esc(p.axis)))
-        P.append('<div class="scroll"><table>'
-                 '<tr><th>Indicator</th><th>Value</th><th>1W</th>'
-                 '<th>Percentile%s</th><th>Direction</th><th>History</th></tr>'
-                 % _help("percentile"))
+        P.append('<div class="dd-group">%s <span class="dd-axis">%s</span></div>'
+                 % (_esc(PILLAR_PLAIN_NAME.get(num, PILLAR_NAMES.get(num, ""))),
+                    _esc(p.axis)))
+
         for r in p.readings:
             series = history.get(r.sid) or []
-            pct = "-" if r.percentile is None else "%.0f" % r.percentile
-            P.append('<tr>')
-            P.append('<td>%s%s</td>' % (
-                _esc(r.name),
-                ' <span style="color:var(--muted);font-size:11px;">stale</span>' if r.stale else ""))
-            P.append('<td class="num">%s</td>' % _esc(fmt_value(r)))
-            from .email_builder import fmt_change
-            P.append('<td class="num">%s</td>' % _esc(fmt_change(r.chg_1w, r.decimals, r.unit)))
-            P.append('<td class="num" style="color:var(--muted);">%s</td>' % pct)
-            P.append('<td style="color:var(--ink-2);">%s</td>' % _esc(r.direction or "-"))
-            P.append('<td>%s</td>' % _sparkline(series))
-            P.append('</tr>')
-        P.append('</table></div>')
-    P.append('<div class="note">Percentile is the value&rsquo;s rank within its own '
-             'trailing window, not a fixed threshold. Sparklines show the replayed '
-             'history at weekly resolution.</div>')
+            spec = ctx.get('spec_by_id', {}).get(r.sid, {})
+            meaning = describe(r.sid, r.percentile, r.direction, r.value,
+                               spec.get('anchor'), spec.get('anchor_note'),
+                               spec.get('anchor_signal', 'above'))
+            tip = tooltip(r.sid)
+            name_html = _esc(r.name)
+            if tip:
+                name_html = ('<span class="dd-term" tabindex="0" role="button" '
+                             'data-tip="%s">%s</span>' % (_esc(tip), _esc(r.name)))
+
+            P.append('<div class="dd-row">')
+            P.append('<div class="dd-head">'
+                     '<span class="dd-name">%s%s</span>'
+                     '<span class="dd-val">%s</span></div>'
+                     % (name_html,
+                        ' <span class="dd-stale" data-tip="%s">stale</span>'
+                        % _esc(HELP["stale"]) if r.stale else "",
+                        _esc(fmt_value(r))))
+            if meaning:
+                P.append('<div class="dd-mean">%s</div>' % _esc(meaning))
+            P.append('<div class="dd-foot">')
+            P.append('<span>%s since last release</span>'
+                     % _esc(fmt_change(r.chg_1w, r.decimals, r.unit)))
+            if r.percentile is not None:
+                P.append('<span>%s percentile</span>' % ordinal(r.percentile))
+            P.append('<span>%s</span>' % _esc(r.direction or "flat"))
+            P.append('</div>')
+            if series:
+                P.append('<div class="dd-spark">%s</div>' % _sparkline(series))
+            P.append('</div>')
+
+    P.append('<div class="note">Percentile is where today sits within this '
+             'indicator&rsquo;s own past three years &mdash; not a fixed threshold, '
+             'because what counted as a high reading in 2015 was normal in 1995.</div>')
     P.append('</div>')
     return "".join(P)
 
@@ -900,6 +949,71 @@ def _gaps_inner():
     return _bare(_not_built_section())
 
 
+def _outlook_section(ctx):
+    """Which sectors today's conditions suit, and where prices disagree.
+
+    Framed as positioning rather than prediction throughout: sensitivities describe
+    what a sector is exposed to, not what its price will do. The comparison against
+    actual performance is the part with real information in it - agreement is
+    unremarkable, disagreement is worth a look.
+    """
+    from ..engine.sectors import divergences, score_sectors
+
+    rows = ctx.get("sector_outlook") or []
+    if not rows:
+        return ""
+
+    P = ['<div class="card">', '<h2>What conditions favour%s</h2>' % _help("outlook")]
+    P.append('<p class="section-lead">Each sector is exposed to different forces. '
+             'Utilities carry heavy debt and behave like bonds; banks earn a spread '
+             'that widens with rates; energy revenue is largely the oil price. This '
+             'ranks them by how well <em>today\u2019s</em> readings suit what each one '
+             'is exposed to.</p>')
+
+    vmax = max([abs(r["score"]) for r in rows] + [0.35])
+    P.append('<div class="scroll"><table>')
+    P.append('<tr><th>Sector</th><th>Fit with conditions</th><th></th>'
+             '<th>Actual 1M vs S&amp;P</th></tr>')
+    for r in rows:
+        tone = DIVERGE_POS if r["score"] >= 0 else DIVERGE_NEG
+        driver = "; ".join(r["drivers"]) if r["drivers"] else "no dominant driver"
+        actual = r.get("actual")
+        P.append('<tr>')
+        P.append('<td><span class="dd-term" tabindex="0" data-tip="%s">%s</span> '
+                 '<span style="color:var(--muted);">%s</span>'
+                 '<div style="font-size:11.5px;color:var(--muted);margin-top:2px;">%s</div></td>'
+                 % (_esc(r["why"]), _esc(r["name"]), _esc(r["symbol"]), _esc(driver)))
+        P.append('<td class="num" style="color:%s;font-weight:600;">%+.2f</td>' % (tone, r["score"]))
+        P.append('<td>%s</td>' % _diverging_bar(r["score"], vmax,
+                                                "%s fit %+.2f" % (r["symbol"], r["score"])))
+        P.append('<td class="num">%s</td>'
+                 % ("-" if actual is None else "%+.1fpp" % actual))
+        P.append('</tr>')
+    P.append('</table></div>')
+
+    gaps = divergences(rows)
+    if gaps:
+        P.append('<div style="margin-top:16px;">')
+        P.append('<div style="font-size:12px;letter-spacing:.9px;text-transform:uppercase;'
+                 'color:var(--muted);font-weight:700;margin-bottom:8px;">'
+                 'Where conditions and prices disagree</div>')
+        for r, note in gaps:
+            P.append('<div style="border-left:3px solid %s;padding:8px 13px;margin:8px 0;">'
+                     '<div style="font-size:13.5px;font-weight:600;">%s '
+                     '<span style="color:var(--muted);font-weight:400;">%s</span></div>'
+                     '<div style="font-size:12.5px;color:var(--ink-2);margin-top:3px;">%s.</div>'
+                     '</div>' % (STATUS["watch"], _esc(r["name"]), _esc(r["symbol"]), _esc(note)))
+        P.append('</div>')
+
+    P.append('<div class="note"><strong>This is positioning, not prediction.</strong> '
+             'It says which sectors are exposed to the forces currently in play, based '
+             'on what each one owns and owes. It does not say what any price will do, '
+             'and these relationships are averages that break in any individual month. '
+             'Where the market already disagrees, the market may simply be right.</div>')
+    P.append('</div>')
+    return "".join(P)
+
+
 def _more(title, hint, inner, open_by_default=False):
     """A collapsed layer. The page should answer the question at a glance and let
     curiosity, not obligation, pull the reader deeper."""
@@ -958,6 +1072,7 @@ def build(ctx, records=None, alerts=None, synthetic=False,
         'shows where today sits between the two extremes.</p>%s</div>'
         % (_help("pillar"), _pillar_cards(ctx)),
         signals_inner,
+        _outlook_section(ctx),
 
         # --- layer 2: the evidence, one tap away ---
         _more("Where money is moving", "sector performance vs the S&P 500",

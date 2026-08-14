@@ -630,3 +630,168 @@ class TestFixtureCoverage(unittest.TestCase):
                    if not os.path.exists(os.path.join(
                        ROOT, "tests", "fixtures", "av_%s.json" % s["symbol"]))]
         self.assertEqual(missing, [], "missing fixtures: %s" % missing)
+
+
+class TestIndicatorExplanations(unittest.TestCase):
+    """Every tracked number must carry its meaning. Adding a series without an
+    explanation silently produces a bare figure the reader cannot interpret."""
+
+    def setUp(self):
+        from src.output import explain
+        self.explain = explain
+        with open(os.path.join(ROOT, "config", "fred_series.json")) as fh:
+            self.series = json.load(fh)["series"]
+
+    def test_every_series_has_an_explanation(self):
+        missing = [s["id"] for s in self.series
+                   if s["id"] not in self.explain.INDICATOR_INFO]
+        self.assertEqual(missing, [], "no explanation for: %s" % missing)
+
+    def test_derived_readings_are_explained_too(self):
+        for sid in ("RSP_SPY", "SPY_TREND"):
+            self.assertIn(sid, self.explain.INDICATOR_INFO)
+
+    def test_each_entry_has_all_four_parts(self):
+        for sid, info in self.explain.INDICATOR_INFO.items():
+            self.assertEqual(len(info), 4, "%s malformed" % sid)
+            for part in info:
+                self.assertTrue(part and part.strip(), "%s has an empty part" % sid)
+
+    def test_describe_links_reading_to_meaning(self):
+        high = self.explain.describe("VIXCLS", 95.0, "rising")
+        low = self.explain.describe("VIXCLS", 5.0, "falling")
+        self.assertIn("top of its 3-year range", high)
+        self.assertIn("Fear is elevated", high)
+        self.assertIn("complacent", low)
+        self.assertNotEqual(high, low)
+
+    def test_describe_survives_missing_percentile(self):
+        self.assertIsInstance(self.explain.describe("VIXCLS", None, None), str)
+
+    def test_describe_unknown_series_is_empty_not_an_error(self):
+        self.assertEqual(self.explain.describe("NOT_A_SERIES", 50.0, "flat"), "")
+
+
+class TestAnchorAwareDescriptions(unittest.TestCase):
+    """Percentile alone misreads a series with a structural threshold, and which
+    side of that threshold counts as the signal cannot be inferred."""
+
+    def setUp(self):
+        from src.output import explain
+        self.d = explain.describe
+        with open(os.path.join(ROOT, "config", "fred_series.json")) as fh:
+            self.series = json.load(fh)["series"]
+
+    def test_every_anchored_series_declares_its_signal_side(self):
+        undeclared = [s["id"] for s in self.series
+                      if "anchor" in s and "anchor_signal" not in s]
+        self.assertEqual(undeclared, [], "anchored but no anchor_signal: %s" % undeclared)
+        for s in self.series:
+            if "anchor_signal" in s:
+                self.assertIn(s["anchor_signal"], ("above", "below"))
+
+    def test_sahm_below_trigger_does_not_claim_recession(self):
+        """0.41 is the top of its own range but below the 0.50 line."""
+        out = self.d("SAHMREALTIME", 99.0, "rising", 0.41, 0.50, None, "above")
+        self.assertIn("Not yet across", out)
+        self.assertNotIn("reached recessionary territory", out)
+
+    def test_sahm_above_trigger_does_claim_it(self):
+        out = self.d("SAHMREALTIME", 99.0, "rising", 0.55, 0.50, None, "above")
+        self.assertIn("recessionary territory", out)
+
+    def test_inverted_curve_reads_as_signalling(self):
+        """A curve signals BELOW zero; treating 'above' as fired inverted the meaning."""
+        out = self.d("T10Y2Y", 5.0, "falling", -0.30, 0.0, None, "below")
+        self.assertIn("Inverted", out)
+        self.assertNotIn("not signalling", out)
+
+    def test_positive_curve_reads_as_quiet(self):
+        out = self.d("T10Y2Y", 70.0, "rising", 0.69, 0.0, None, "below")
+        self.assertIn("not signalling", out)
+
+    def test_threshold_is_formatted_readably(self):
+        self.assertIn("0.50", self.d("SAHMREALTIME", 99.0, "rising", 0.55, 0.50, None, "above"))
+
+    def test_unanchored_series_still_use_percentile(self):
+        out = self.d("VIXCLS", 95.0, "rising")
+        self.assertIn("top of its 3-year range", out)
+
+
+class TestSectorOutlook(unittest.TestCase):
+    """Sensitivities are structural exposures, not forecasts. The tests pin the
+    mechanics so a sign error cannot quietly invert the advice."""
+
+    def setUp(self):
+        from src.engine import sectors
+        self.s = sectors
+        self.specs = [{"symbol": k, "name": k} for k in sectors.SENSITIVITY]
+
+    def _pillars(self, growth=0.0, inflation=0.0, tight=0.0, stress=0.0):
+        return {1: FakePillar(1, growth), 2: FakePillar(2, inflation),
+                3: FakePillar(3, tight), 4: FakePillar(4, stress),
+                5: FakePillar(5, 0.0)}
+
+    def test_easing_rates_favour_the_bond_proxies(self):
+        """Utilities and real estate are the most rate-sensitive; easing suits them."""
+        rows, _ = self.s.score_sectors(self._pillars(tight=-0.8), self.specs)
+        top = [r["symbol"] for r in rows[:3]]
+        self.assertTrue({"XLU", "XLRE"} & set(top), "expected rate-sensitives on top: %s" % top)
+
+    def test_tightening_rates_punish_the_same_sectors(self):
+        rows, _ = self.s.score_sectors(self._pillars(tight=0.8), self.specs)
+        bottom = [r["symbol"] for r in rows[-3:]]
+        self.assertTrue({"XLU", "XLRE"} & set(bottom))
+
+    def test_credit_stress_favours_defensives_over_cyclicals(self):
+        rows, _ = self.s.score_sectors(self._pillars(stress=0.8), self.specs)
+        order = [r["symbol"] for r in rows]
+        self.assertLess(order.index("XLP"), order.index("XLY"))
+        self.assertLess(order.index("XLP"), order.index("XLF"))
+
+    def test_hot_inflation_favours_energy(self):
+        rows, _ = self.s.score_sectors(self._pillars(inflation=0.9), self.specs)
+        self.assertEqual(rows[0]["symbol"], "XLE")
+
+    def test_strong_growth_favours_cyclicals_over_staples(self):
+        rows, _ = self.s.score_sectors(self._pillars(growth=0.9), self.specs)
+        order = [r["symbol"] for r in rows]
+        self.assertLess(order.index("XLY"), order.index("XLP"))
+        self.assertLess(order.index("XLI"), order.index("XLU"))
+
+    def test_every_sector_explains_its_own_exposure(self):
+        for symbol, sens in self.s.SENSITIVITY.items():
+            self.assertTrue(sens.get("why"), "%s has no explanation" % symbol)
+
+    def test_drivers_are_named_for_each_row(self):
+        rows, _ = self.s.score_sectors(self._pillars(growth=0.6, tight=-0.5), self.specs)
+        self.assertTrue(all(r["drivers"] for r in rows))
+
+    def test_returns_nothing_when_conditions_are_unknown(self):
+        blank = {n: FakePillar(n, 0.0, known=False) for n in (1, 2, 3, 4, 5)}
+        rows, _ = self.s.score_sectors(blank, self.specs)
+        self.assertEqual(rows, [])
+
+    def test_divergence_flags_favoured_but_lagging(self):
+        rows = [{"symbol": "XLU", "name": "Utilities", "score": 0.5,
+                 "drivers": [], "why": "", "actual": -2.5}]
+        gaps = self.s.divergences(rows)
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("lagged", gaps[0][1])
+
+    def test_divergence_flags_disfavoured_but_leading(self):
+        rows = [{"symbol": "XLY", "name": "Discretionary", "score": -0.5,
+                 "drivers": [], "why": "", "actual": 3.0}]
+        self.assertIn("bid it up", self.s.divergences(rows)[0][1])
+
+    def test_agreement_is_not_flagged(self):
+        rows = [{"symbol": "XLU", "name": "U", "score": 0.5, "drivers": [],
+                 "why": "", "actual": 2.0}]
+        self.assertEqual(self.s.divergences(rows), [])
+
+    def test_every_sector_etf_in_config_has_a_sensitivity(self):
+        with open(os.path.join(ROOT, "config", "av_symbols.json")) as fh:
+            cfg = json.load(fh)["symbols"]
+        missing = [s["symbol"] for s in cfg
+                   if s.get("role") == "sector" and s["symbol"] not in self.s.SENSITIVITY]
+        self.assertEqual(missing, [], "sector ETFs without sensitivities: %s" % missing)

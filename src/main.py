@@ -16,7 +16,8 @@ import sys
 from datetime import date
 
 from .engine import alerts as alert_engine
-from .engine import backfill, chain, market, regime, signals as signal_engine
+from .engine import backfill, chain, market, regime, sectors as sector_engine
+from .engine import signals as signal_engine
 from .engine.indicators import build_reading
 from .engine.pillar_scores import score_all
 from .fetchers import av_fetcher, fred_fetcher, treasury_fetcher, yf_fallback
@@ -176,6 +177,13 @@ def run(args):
 
     # ---- render
     sectors = market.sector_table(market_series, av_specs, "SPY", cfg)
+
+    # Map current conditions onto each sector's structural exposures (spec 2.3).
+    dollar = by_sid.get("DTWEXBGS")
+    outlook_rows, _ = sector_engine.score_sectors(
+        pillars, av_specs,
+        dollar_drift=(dollar.drift if dollar is not None else None),
+        market_rs={r["symbol"]: r["rs"].get("1m") for r in sectors})
     ctx = {
         "date": today,
         "diagnosis": diagnosis,
@@ -187,6 +195,10 @@ def run(args):
         "sector_note": av_fetcher.DIVIDEND_DRAG_NOTE,
         "global_rows": _global_rows(by_sid, market_series),
         "errors": errors,
+        # Anchors travel with the reading so the dashboard can say "below the 0.50
+        # threshold" instead of inferring meaning from percentile alone.
+        "spec_by_id": {sp["id"]: sp for sp in specs},
+        "sector_outlook": outlook_rows,
     }
     subject, text_body, html_body = email_builder.build(ctx)
 

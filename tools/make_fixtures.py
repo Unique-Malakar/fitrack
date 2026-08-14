@@ -34,6 +34,19 @@ FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 # the series have no recent trend to detect, and every momentum read is correctly
 # zero - a uniform three-year drift is not an event.
 PROFILE = {
+    "GDPNOW":        (5.83, -1.10, 0.42, 2.0),
+    "CFNAI":         (-0.02, -0.34, 0.12, 2.2),
+    "WEI":           (2.70, 0.42, 0.18, 1.8),
+    "INDPRO":        (102.64, 2.5, 0.42),
+    "JTSJOL":        (7359.0, -620.0, 90.0, 1.6),
+    "JTSQUR":        (2.00, -0.26, 0.05, 1.8),
+    "CORESTICKM159SFRBATL": (2.72, -0.62, 0.06, 1.6),
+    "MEDCPIM158SFRBCLE": (3.11, -0.70, 0.09, 1.6),
+    "T5YIFR":        (2.27, 0.07, 0.025),
+    "MICH":          (4.60, 0.62, 0.18, 2.0),
+    "DRCCLACBS":     (2.92, 0.52, 0.06, 1.8),
+    "NFCICREDIT":    (-0.06, 0.11, 0.02, 3.0),
+    "PSAVERT":       (2.70, -0.80, 0.15, 1.6),
     "DGS2":          (3.62, -0.35, 0.06),
     "DGS10":         (4.31, 0.28, 0.06),
     "DGS30":         (4.92, 0.42, 0.06, 2.6),
