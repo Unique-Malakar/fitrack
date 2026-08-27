@@ -18,10 +18,15 @@ from datetime import date
 from .engine import alerts as alert_engine
 from .engine import backfill, chain, market, regime, sectors as sector_engine
 from .engine import signals as signal_engine
+from .engine import aicredit as aicredit_engine
+from .engine import transitions as transition_engine
+from .engine import watchlist as watch_engine
 from .engine.indicators import build_reading
 from .engine.pillar_scores import score_all
-from .fetchers import av_fetcher, fred_fetcher, treasury_fetcher, yf_fallback
+from .fetchers import av_fetcher, earnings_fetcher, equity_fetcher
+from .fetchers import fred_fetcher, rss_fetcher, treasury_fetcher, yf_fallback
 from .output import alert_builder, dashboard, email_builder, email_sender
+from .output import pages, treemap
 from . import store
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -86,10 +91,19 @@ def run(args):
     # against a 25/day cap shared with the morning brief.
     fetch_specs = ([s for s in av_specs if s["symbol"] == "SPY"]
                    if args.alerts else av_specs)
-    print("Fetching %d Alpha Vantage symbol(s)..." % len(fetch_specs))
-    market_series, av_errors = av_fetcher.fetch_all(
-        fetch_specs, av_key, args.fixtures, args.record,
-        av_cfg["budget"]["free_tier_daily_limit"])
+    cached_av = None if (args.fixtures or args.record) else store.load_av_cache()
+    if cached_av and not args.alerts:
+        market_series = store.rehydrate_av(cached_av)
+        av_errors = {}
+        print("Alpha Vantage: reusing cached pull (%d symbols, no requests spent)"
+              % len(market_series))
+    else:
+        print("Fetching %d Alpha Vantage symbol(s)..." % len(fetch_specs))
+        market_series, av_errors = av_fetcher.fetch_all(
+            fetch_specs, av_key, args.fixtures, args.record,
+            av_cfg["budget"]["free_tier_daily_limit"])
+        if market_series and not args.fixtures and not args.alerts:
+            store.save_av_cache(market_series)
     print("  %d ok, %d failed" % (len(market_series), len(av_errors)))
 
     auctions = None
@@ -178,6 +192,23 @@ def run(args):
     # ---- render
     sectors = market.sector_table(market_series, av_specs, "SPY", cfg)
 
+    # Top-of-page prices. Order is deliberate: US indices, then bonds, then the
+    # international and hard-asset reads that put the US move in context.
+    ticker = _build_ticker(by_sid, args)
+
+    # Upcoming earnings: one request returns the whole forward calendar, so this is
+    # cheap regardless of how many names are watched.
+    upcoming_earnings = []
+    try:
+        watch = {s["symbol"] for s in av_specs} | set(_portfolio_tickers())
+        for names in load_json("constituents.json")["sectors"].values():
+            watch.update(names)
+        rows = earnings_fetcher.fetch_calendar(av_key, use_fixtures=args.fixtures)
+        upcoming_earnings = earnings_fetcher.select(rows, watch, today=today)
+        print("Earnings calendar: %d upcoming in the next 3 weeks" % len(upcoming_earnings))
+    except Exception as exc:  # noqa: BLE001 - never block the brief
+        errors["earnings_calendar"] = str(exc)[:140]
+
     # Map current conditions onto each sector's structural exposures (spec 2.3).
     dollar = by_sid.get("DTWEXBGS")
     outlook_rows, _ = sector_engine.score_sectors(
@@ -199,6 +230,15 @@ def run(args):
         # threshold" instead of inferring meaning from percentile alone.
         "spec_by_id": {sp["id"]: sp for sp in specs},
         "sector_outlook": outlook_rows,
+        "spec_readings": by_sid,
+        "raw_series": raw,
+        "ticker": ticker,
+        "watchlist": watch_engine.top_indicators(readings, specs, raw),
+        "would_change": watch_engine.what_would_change(
+            pillars, readings, specs, diagnosis, cfg),
+        "transitions": transition_engine.outlook(
+            store.load_history() or records, diagnosis.regime, args.replay_step),
+        "earnings": upcoming_earnings,
     }
     subject, text_body, html_body = email_builder.build(ctx)
 
@@ -216,6 +256,9 @@ def run(args):
     print("\nDebt chain: %s" % chain_summary["verdict"])
     for st in chain_stages:
         print("  Stage %d %-24s %s" % (st.num, st.name, st.label))
+
+    if args.dashboard:
+        _build_extra_pages(ctx, diagnosis, today, args)
 
     # ---- Phase 4: dashboard
     if args.dashboard:
@@ -240,6 +283,165 @@ def run(args):
     to = email_sender.send(email_cfg, subject, text_body, html_body)
     print("\nSent to %s" % to)
     return 0
+
+
+def _gauge_returns(symbols, days=63):
+    """Trailing returns for the aggregate gauges, in one bulk request."""
+    from .fetchers import equity_fetcher as _eq
+    out = {}
+    if not _eq.AVAILABLE:
+        return out
+    try:
+        import yfinance as yf
+        frame = yf.download(" ".join(symbols), period="6mo", progress=False,
+                            auto_adjust=False, threads=True)
+    except Exception:  # noqa: BLE001
+        return out
+    for sym in symbols:
+        try:
+            col = frame["Close"][sym].dropna()
+            values = [float(v) for v in col.tolist()]
+        except Exception:  # noqa: BLE001
+            continue
+        if len(values) < 2:
+            continue
+        rec = {}
+        for window in (21, 63):
+            if len(values) > window and values[-1 - window]:
+                rec["ret_%d" % window] = (values[-1] / values[-1 - window] - 1) * 100.0
+        out[sym] = rec
+    return out
+
+
+def _build_ticker(by_sid, args):
+    """Top-of-page prices, from Yahoo rather than Alpha Vantage.
+
+    Yahoo is unmetered, which is what makes crypto, futures and several
+    international markets affordable here - the Alpha Vantage free tier is fully
+    committed to the regime engine's own symbols.
+    """
+    tiles = load_json("ticker_strip.json")["tiles"]
+    out = []
+
+    live = {}
+    symbols = [t["symbol"] for t in tiles if t.get("source") != "fred"]
+    if symbols and not args.fixtures:
+        quotes, err = equity_fetcher.fetch_quotes(symbols, with_caps=False)
+        live = quotes or {}
+        if err:
+            print("Ticker strip: %s" % err, file=sys.stderr)
+
+    for tile in tiles:
+        if tile.get("source") == "fred":
+            r = by_sid.get(tile["sid"])
+            if r is None or r.value is None:
+                continue
+            out.append({"label": tile["label"], "name": r.name,
+                        "value": "%.2f%s" % (r.value, tile.get("suffix", "")),
+                        "chg_1d": None})
+            continue
+        q = live.get(tile["symbol"])
+        if q is None:
+            continue
+        digits = 0 if q.price >= 1000 else 2
+        out.append({"label": tile["label"],
+                    "name": "%s (%s)" % (tile["label"], tile["symbol"]),
+                    "value": "{:,.{d}f}".format(q.price, d=digits),
+                    "chg_1d": q.change_pct})
+    return out
+
+
+def _portfolio_tickers():
+    try:
+        return [t.strip().upper() for t in load_json("portfolio.json")["tickers"] if t.strip()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _build_extra_pages(ctx, diagnosis, today, args):
+    """Heatmap, news and watchlist tabs.
+
+    Each is wrapped independently: these depend on an unofficial price source and
+    on third-party feeds, and neither should be able to take down the dashboard.
+    """
+    stamp = today.strftime("%d %B %Y")
+
+    # --- heatmap
+    svg, cap_error = "", None
+    try:
+        sector_map = load_json("constituents.json")["sectors"]
+        cached = store.load_market_caps()
+        quotes, cap_error = equity_fetcher.fetch_constituents(sector_map, cached)
+        if quotes and not cached:
+            store.save_market_caps({s: q.market_cap for s, q in quotes.items()
+                                    if q.market_cap})
+        if quotes:
+            svg = treemap.render(quotes, sector_map)
+            print("Heatmap: %d constituents" % len(quotes))
+    except Exception as exc:  # noqa: BLE001
+        cap_error = str(exc)[:140]
+    # Crypto and metals for the cards below the map.
+    assets, asset_cfg = {}, {}
+    try:
+        asset_cfg = load_json("assets.json")
+        wanted = [a["symbol"] for a in asset_cfg["crypto"] + asset_cfg["metals"]]
+        if not args.fixtures:
+            assets, aerr = equity_fetcher.fetch_history(wanted)
+            if aerr:
+                print("Asset cards: %s" % aerr, file=sys.stderr)
+            else:
+                print("Asset cards: %d crypto/metals" % len(assets))
+    except Exception as exc:  # noqa: BLE001
+        print("Asset cards failed: %s" % str(exc)[:120], file=sys.stderr)
+
+    store.write_page("heatmap.html", pages.heatmap_page(
+        svg, cap_error, stamp, assets=assets, asset_cfg=asset_cfg))
+
+    # --- AI credit thesis
+    try:
+        gcfg = load_json("aicredit_gauges.json")["gauges"]
+        gauges = {}
+        if not args.fixtures:
+            syms = [g["symbol"] for g in gcfg]
+            quotes, _ = equity_fetcher.fetch_quotes(syms, with_caps=False, period="6mo")
+            import yfinance as _yf  # noqa: F401  (already imported by the fetcher)
+            gauges = _gauge_returns(syms)
+        stages, summary = aicredit_engine.evaluate(ctx["spec_readings"], gauges,
+                                                   ctx.get("raw_series"))
+        store.write_page("aicredit.html", pages.aicredit_page(
+            stages, summary, aicredit_engine.NOT_MEASURABLE, stamp))
+        print("AI credit: %s" % summary["verdict"])
+    except Exception as exc:  # noqa: BLE001
+        print("AI credit tab failed: %s" % str(exc)[:140], file=sys.stderr)
+
+    # --- news
+    try:
+        feeds_cfg = load_json("news_feeds.json")
+        by_topic = ({} if args.fixtures
+                    else rss_fetcher.fetch_all(feeds_cfg["feeds"]))
+        print("News: %d headlines" % sum(len(v) for v in by_topic.values()))
+        store.write_page("news.html", pages.news_page(
+            by_topic, feeds_cfg["topics"], stamp))
+    except Exception as exc:  # noqa: BLE001
+        print("News tab failed: %s" % str(exc)[:120], file=sys.stderr)
+
+    # --- watchlist
+    pinned = _portfolio_tickers()
+    universe, err = {}, None
+    try:
+        wanted = sorted(set(load_json("universe.json")["tickers"]) | set(pinned))
+        if not args.fixtures:
+            quotes, err = equity_fetcher.fetch_quotes(wanted, with_caps=False)
+            universe = {s: {"p": round(q.price, 4),
+                            "c": round(q.change_pct, 2) if q.change_pct is not None else None}
+                        for s, q in (quotes or {}).items()}
+            print("Watchlist: %d tickers priced" % len(universe))
+    except Exception as exc:  # noqa: BLE001
+        err = str(exc)[:140]
+    store.write_page("watchlist.html", pages.watchlist_page(
+        [], err, diagnosis.regime, diagnosis.flows.get("favored", "-"),
+        diagnosis.flows.get("disfavored", "-"), stamp,
+        universe=universe, pinned=pinned))
 
 
 def _pct_over(series, bars):

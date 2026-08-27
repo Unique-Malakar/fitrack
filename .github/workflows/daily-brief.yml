@@ -14,7 +14,9 @@ on:
         default: true
 
 concurrency:
-  group: daily-brief
+  # Shared with the intraday refresh: both write the same pages and deploy the same
+  # site, so they must never run at the same time.
+  group: site-build
   cancel-in-progress: false
 
 permissions:
@@ -36,7 +38,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The pipeline is stdlib-only, so there is nothing to install for the core run.
+      # The regime engine is stdlib-only. yfinance is needed only by the heatmap and
+      # watchlist tabs, which fail soft, so a broken install cannot stop the brief.
+      - name: Install optional dependencies
+        continue-on-error: true
+        run: pip install -r requirements.txt
+
       - name: Run tests
         run: python -m unittest discover -s tests
 
@@ -84,6 +91,10 @@ jobs:
         run: |
           mkdir -p site
           cp build/dashboard.html site/index.html
+          for page in heatmap news watchlist; do
+            [ -s "build/$page.html" ] && cp "build/$page.html" "site/$page.html" || true
+          done
+          ls -la site/
 
       - uses: actions/upload-pages-artifact@v5
         if: always() && steps.check.outputs.built == 'true'

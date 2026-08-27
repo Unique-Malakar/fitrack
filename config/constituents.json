@@ -1,0 +1,109 @@
+{
+ "_comment": [
+  "Constituents for the sector treemap. Box area is market capitalisation, colour is",
+  "the daily move - the same encoding as the familiar finance heatmaps.",
+  "",
+  "This is a static list of large caps, not a live index membership feed. It drifts as",
+  "companies rise and fall out of the top ranks and should be refreshed occasionally.",
+  "Prices and market caps come from Yahoo via yfinance in a single bulk request.",
+  "",
+  "Kept to roughly sixty names deliberately: enough for the map to be recognisable,",
+  "few enough that every box stays large enough to label."
+ ],
+ "sectors": {
+  "Technology": [
+   "NVDA",
+   "AAPL",
+   "MSFT",
+   "AVGO",
+   "AMD",
+   "MU",
+   "INTC",
+   "ORCL",
+   "CRM",
+   "ADBE",
+   "QCOM",
+   "TXN",
+   "PLTR",
+   "CSCO"
+  ],
+  "Communication Services": [
+   "GOOGL",
+   "META",
+   "NFLX",
+   "DIS",
+   "TMUS"
+  ],
+  "Consumer Discretionary": [
+   "AMZN",
+   "TSLA",
+   "HD",
+   "MCD",
+   "BKNG",
+   "NKE",
+   "SBUX",
+   "LOW"
+  ],
+  "Consumer Staples": [
+   "WMT",
+   "COST",
+   "PG",
+   "KO",
+   "PEP",
+   "PM"
+  ],
+  "Healthcare": [
+   "LLY",
+   "JNJ",
+   "ABBV",
+   "UNH",
+   "MRK",
+   "TMO",
+   "ABT",
+   "PFE"
+  ],
+  "Financials": [
+   "BRK-B",
+   "JPM",
+   "V",
+   "MA",
+   "BAC",
+   "WFC",
+   "GS",
+   "MS",
+   "AXP"
+  ],
+  "Industrials": [
+   "GE",
+   "RTX",
+   "CAT",
+   "UNP",
+   "BA",
+   "HON",
+   "UPS",
+   "LMT"
+  ],
+  "Energy": [
+   "XOM",
+   "CVX",
+   "COP",
+   "SLB",
+   "EOG"
+  ],
+  "Utilities": [
+   "NEE",
+   "SO",
+   "DUK"
+  ],
+  "Real Estate": [
+   "PLD",
+   "AMT",
+   "EQIX"
+  ],
+  "Materials": [
+   "LIN",
+   "SHW",
+   "FCX"
+  ]
+ }
+}

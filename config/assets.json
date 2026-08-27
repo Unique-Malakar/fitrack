@@ -1,0 +1,24 @@
+{
+  "_comment": [
+    "Crypto and metals shown below the heatmap. Prices and six-month history come",
+    "from Yahoo via yfinance, which is unmetered - Alpha Vantage could not carry",
+    "these alongside the regime engine's own symbols.",
+    "",
+    "Futures contracts (the =F symbols) are front-month, which is what 'the price of",
+    "copper' means in practice. Copper is quoted per pound and aluminium per tonne,",
+    "so the units differ by metal and are labelled per row."
+  ],
+  "crypto": [
+    {"symbol": "BTC-USD", "label": "Bitcoin", "unit": "", "decimals": 0},
+    {"symbol": "ETH-USD", "label": "Ethereum", "unit": "", "decimals": 0},
+    {"symbol": "SOL-USD", "label": "Solana", "unit": "", "decimals": 2}
+  ],
+  "metals": [
+    {"symbol": "GC=F", "label": "Gold", "unit": "per oz", "decimals": 2},
+    {"symbol": "SI=F", "label": "Silver", "unit": "per oz", "decimals": 2},
+    {"symbol": "PL=F", "label": "Platinum", "unit": "per oz", "decimals": 2},
+    {"symbol": "PA=F", "label": "Palladium", "unit": "per oz", "decimals": 2},
+    {"symbol": "HG=F", "label": "Copper", "unit": "per lb", "decimals": 3},
+    {"symbol": "ALI=F", "label": "Aluminium", "unit": "per tonne", "decimals": 2}
+  ]
+}

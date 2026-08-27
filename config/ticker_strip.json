@@ -1,0 +1,72 @@
+{
+ "_comment": [
+  "Top-of-page prices, fetched from Yahoo via yfinance rather than Alpha Vantage.",
+  "Yahoo is unmetered, which is what makes crypto, futures and several international",
+  "markets affordable - the Alpha Vantage free tier could not carry them alongside",
+  "the regime engine's own symbols.",
+  "Order is deliberate: US equities, then bonds, then hard assets, then the rest of",
+  "the world. `source: fred` tiles come from the regime engine and need no request."
+ ],
+ "tiles": [
+  {
+   "symbol": "SPY",
+   "label": "S&P 500"
+  },
+  {
+   "symbol": "QQQ",
+   "label": "Nasdaq"
+  },
+  {
+   "symbol": "IWM",
+   "label": "Small caps"
+  },
+  {
+   "symbol": "TLT",
+   "label": "20y+ Treasuries"
+  },
+  {
+   "symbol": "GLD",
+   "label": "Gold"
+  },
+  {
+   "symbol": "CL=F",
+   "label": "Crude oil"
+  },
+  {
+   "symbol": "BTC-USD",
+   "label": "Bitcoin"
+  },
+  {
+   "symbol": "ETH-USD",
+   "label": "Ethereum"
+  },
+  {
+   "symbol": "VGK",
+   "label": "Europe"
+  },
+  {
+   "symbol": "EWJ",
+   "label": "Japan"
+  },
+  {
+   "symbol": "FXI",
+   "label": "China"
+  },
+  {
+   "symbol": "EEM",
+   "label": "Emerging mkts"
+  },
+  {
+   "source": "fred",
+   "sid": "DGS10",
+   "label": "10y yield",
+   "suffix": "%"
+  },
+  {
+   "source": "fred",
+   "sid": "VIXCLS",
+   "label": "VIX",
+   "suffix": ""
+  }
+ ]
+}

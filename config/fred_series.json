@@ -12,7 +12,8 @@
   "`anchor` is a STRUCTURAL boundary (definitional, not a guessed level): ISM 50 by",
   "construction, Sahm 0.50 by definition, 0.0 for spreads that invert or indices centered",
   "on zero. Everything else is scored against its own trailing distribution.",
-  "`transform`: level | diff | mom_pct | yoy_pct"
+  "`transform`: level | diff | mom_pct | yoy_pct",
+  "  pillar 8 ai credit   descriptive only, not scored - feeds the AI Credit tracker"
  ],
  "series": [
   {
@@ -752,6 +753,77 @@
    "weight": 0.0,
    "decimals": 2,
    "note": "Yen carry-trade tripwire. Sourced from FRED rather than Alpha Vantage so it costs no request against the 25/day cap."
+  },
+  {
+   "id": "NCBDBIQ027S",
+   "name": "Corporate Debt Securities",
+   "pillar": 8,
+   "freq": "quarterly",
+   "polarity": 0,
+   "transform": "level",
+   "unit": "$B",
+   "weight": 0.0,
+   "decimals": 0,
+   "scale": 0.001,
+   "note": "Total corporate debt outstanding. No free source isolates AI-linked borrowing, so this is the whole pool."
+  },
+  {
+   "id": "DRCRELEXFACBS",
+   "name": "CRE Loan Delinquency Rate",
+   "pillar": 8,
+   "freq": "quarterly",
+   "polarity": 0,
+   "transform": "level",
+   "unit": "%",
+   "weight": 0.0,
+   "decimals": 2
+  },
+  {
+   "id": "DRBLACBS",
+   "name": "Business Loan Delinquency Rate",
+   "pillar": 8,
+   "freq": "quarterly",
+   "polarity": 0,
+   "transform": "level",
+   "unit": "%",
+   "weight": 0.0,
+   "decimals": 2
+  },
+  {
+   "id": "IRLTLT01JPM156N",
+   "name": "Japan 10-Year Govt Yield",
+   "pillar": 8,
+   "freq": "monthly",
+   "polarity": 0,
+   "transform": "level",
+   "unit": "%",
+   "weight": 0.0,
+   "decimals": 2,
+   "note": "The carry-trade channel. Rising JGB yields reduce the incentive to hold foreign bonds."
+  },
+  {
+   "id": "BOGZ1FL543063005Q",
+   "name": "Life Insurers: Corporate Bonds",
+   "pillar": 8,
+   "freq": "quarterly",
+   "polarity": 0,
+   "transform": "level",
+   "unit": "$B",
+   "weight": 0.0,
+   "decimals": 0,
+   "scale": 0.001
+  },
+  {
+   "id": "BOGZ1FL544090005Q",
+   "name": "Life Insurers: Total Assets",
+   "pillar": 8,
+   "freq": "quarterly",
+   "polarity": 0,
+   "transform": "level",
+   "unit": "$B",
+   "weight": 0.0,
+   "decimals": 0,
+   "scale": 0.001
   }
  ],
  "removed": [

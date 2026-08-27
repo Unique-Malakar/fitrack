@@ -1,0 +1,49 @@
+{
+ "_comment": [
+  "Aggregate gauges for the AI-credit tracker, fetched from Yahoo (unmetered).",
+  "",
+  "Deliberately index funds rather than individual companies. The thesis names",
+  "specific asset managers and insurers as the risk channel, but a dashboard row",
+  "implying a named firm is systemically dangerous is a strong public claim, and the",
+  "ownership assertions behind it are not independently verified here. Sector-level",
+  "gauges show the same stress without naming anyone."
+ ],
+ "gauges": [
+  {
+   "symbol": "BIZD",
+   "label": "Business development companies",
+   "role": "private_credit",
+   "note": "An index of listed BDCs - the visible slice of private credit."
+  },
+  {
+   "symbol": "HYG",
+   "label": "High-yield bonds",
+   "role": "benchmark",
+   "note": "Public junk credit, the comparison for whether stress is private-credit specific."
+  },
+  {
+   "symbol": "KIE",
+   "label": "Insurance sector",
+   "role": "insurance",
+   "note": "Insurance industry index, used against financials generally."
+  },
+  {
+   "symbol": "XLF",
+   "label": "Financials",
+   "role": "benchmark",
+   "note": "Broad financials."
+  },
+  {
+   "symbol": "EQIX",
+   "label": "Data centre REIT (Equinix)",
+   "role": "datacentre",
+   "note": "Weak proxy for the buildout: hyperscaler capex has no free source."
+  },
+  {
+   "symbol": "DLR",
+   "label": "Data centre REIT (Digital Realty)",
+   "role": "datacentre",
+   "note": ""
+  }
+ ]
+}

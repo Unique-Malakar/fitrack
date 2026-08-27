@@ -8,3 +8,6 @@
 # and percentile arithmetic). Fewer dependencies means fewer ways for a 6am cron
 # job to break.
 yfinance>=0.2.40 ; python_version >= "3.9"
+
+# Used by the heatmap and watchlist tabs only. Both fail soft: if this is missing
+# or broken, those tabs show an empty state and the regime engine is unaffected.

@@ -22,6 +22,9 @@ DAILY_DIR = os.path.join(ROOT, "data", "daily")
 HISTORY_PATH = os.path.join(ROOT, "data", "history.json")
 ALERT_STATE_PATH = os.path.join(ROOT, "data", "alert_state.json")
 DASHBOARD_PATH = os.path.join(ROOT, "build", "dashboard.html")
+BUILD_DIR = os.path.join(ROOT, "build")
+CAPS_PATH = os.path.join(ROOT, "data", "market_caps.json")
+AV_CACHE_PATH = os.path.join(ROOT, "data", "av_cache.json")
 
 
 def _ensure_dir():
@@ -114,9 +117,100 @@ def save_alert_state(state):
 
 
 def write_dashboard(html):
+    """Write the dashboard as both dashboard.html and index.html.
+
+    The navigation links to index.html because that is what GitHub Pages serves.
+    Locally the file was only ever called dashboard.html, so every tab link broke
+    on a local preview - the one situation where you most want the links to work.
+    Writing both makes local preview identical to the deployed site.
+    """
     out_dir = os.path.dirname(DASHBOARD_PATH)
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
-    with open(DASHBOARD_PATH, "w") as fh:
-        fh.write(html)
+    for name in ("dashboard.html", "index.html"):
+        with open(os.path.join(out_dir, name), "w") as fh:
+            fh.write(html)
     return DASHBOARD_PATH
+
+
+def load_market_caps(max_age_days=7, today=None):
+    """Cached market capitalisations.
+
+    Fetching these per ticker dominates the heatmap's runtime (~28s for seventy
+    names) while the values themselves barely move day to day. Refreshed weekly.
+    """
+    from datetime import date as _date, timedelta as _td
+    today = today or _date.today()
+    if not os.path.exists(CAPS_PATH):
+        return None
+    try:
+        with open(CAPS_PATH) as fh:
+            blob = json.load(fh)
+        stamped = _date.fromisoformat(blob.get("generated", "1970-01-01"))
+    except (ValueError, OSError, TypeError):
+        return None
+    if today - stamped > _td(days=max_age_days):
+        return None
+    return blob.get("caps") or None
+
+
+def save_market_caps(caps):
+    _ensure_dir()
+    with open(CAPS_PATH, "w") as fh:
+        json.dump({"generated": date.today().isoformat(), "caps": caps}, fh)
+    return CAPS_PATH
+
+
+def write_page(filename, html):
+    if not os.path.isdir(BUILD_DIR):
+        os.makedirs(BUILD_DIR)
+    path = os.path.join(BUILD_DIR, filename)
+    with open(path, "w") as fh:
+        fh.write(html)
+    return path
+
+
+def load_av_cache(max_age_hours=20):
+    """Cached Alpha Vantage series.
+
+    The free tier allows 25 requests a day, which the morning brief nearly fills.
+    Refreshing the site hourly would need roughly a hundred, so the intraday runs
+    reuse the morning's pull instead. FRED and Yahoo are unmetered and stay live,
+    and the regime verdict is built from daily macro data that does not change
+    between hourly refreshes anyway - only prices do.
+    """
+    from datetime import datetime, timedelta
+    if not os.path.exists(AV_CACHE_PATH):
+        return None
+    try:
+        with open(AV_CACHE_PATH) as fh:
+            blob = json.load(fh)
+        stamped = datetime.fromisoformat(blob["generated"])
+    except (ValueError, OSError, KeyError, TypeError):
+        return None
+    if datetime.utcnow() - stamped > timedelta(hours=max_age_hours):
+        return None
+    return blob.get("series") or None
+
+
+def save_av_cache(series_by_symbol):
+    """Persist the raw closes so an intraday run can rebuild without new requests."""
+    from datetime import datetime
+    _ensure_dir()
+    payload = {s: {"dates": [d.isoformat() for d in ser.dates], "values": ser.values}
+               for s, ser in series_by_symbol.items()}
+    with open(AV_CACHE_PATH, "w") as fh:
+        json.dump({"generated": datetime.utcnow().isoformat(), "series": payload}, fh)
+    return AV_CACHE_PATH
+
+
+def rehydrate_av(blob):
+    from .engine.timeseries import Series, parse_date
+    out = {}
+    for symbol, rec in (blob or {}).items():
+        try:
+            out[symbol] = Series(symbol, [parse_date(d) for d in rec["dates"]],
+                                 [float(v) for v in rec["values"]])
+        except (KeyError, ValueError, TypeError):
+            continue
+    return out

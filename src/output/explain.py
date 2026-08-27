@@ -294,6 +294,38 @@ INDICATOR_INFO = {
         "The rise is broad, with most companies participating. The healthiest configuration.",
         "Only the largest companies are driving the index. Narrow rallies break more easily."),
 
+    # ------------------------------------------------------- AI credit chain
+    "NCBDBIQ027S": (
+        "The total value of bonds issued by American companies.",
+        "The pool that any corporate borrowing binge shows up in. No free source separates out debt tied specifically to AI or data centres, so this is the whole thing.",
+        "Companies have borrowed heavily.",
+        "Corporate borrowing has contracted."),
+    "DRCRELEXFACBS": (
+        "The share of commercial property loans where payments are behind.",
+        "Data centres are commercial property. If the buildout sours, it should appear here before it appears anywhere public.",
+        "Commercial property borrowers are struggling.",
+        "Commercial property loans are being serviced normally."),
+    "DRBLACBS": (
+        "The share of business loans where payments are behind.",
+        "The broadest measure of whether companies are actually failing to pay, as opposed to markets worrying that they might.",
+        "Businesses are defaulting more often.",
+        "Businesses are keeping up with their debts."),
+    "IRLTLT01JPM156N": (
+        "What the Japanese government pays to borrow for ten years.",
+        "Japan's very low rates funded borrowing worldwide for decades. When Japanese yields rise, that money has reason to go home - which is felt in US bond markets.",
+        "Japanese yields are rising, weakening the case for Japanese money to stay abroad.",
+        "Japanese yields remain low, sustaining the outward flow of capital."),
+    "BOGZ1FL543063005Q": (
+        "The value of corporate bonds held by American life insurance companies.",
+        "Life insurers invest your premiums, and corporate credit is where a lot of it goes. This is the exposure the private-credit concern is ultimately about.",
+        "Insurers hold a large amount of corporate credit.",
+        "Insurers' corporate credit holdings have shrunk."),
+    "BOGZ1FL544090005Q": (
+        "Everything American life insurance companies own, in total.",
+        "The denominator. Corporate bond holdings only mean something as a share of the whole.",
+        "The industry's balance sheet has grown.",
+        "The industry's balance sheet has shrunk."),
+
     # ------------------------------------------------------------- global
     "DTWEXBGS": (
         "The dollar against a broad basket of trading partners' currencies.",

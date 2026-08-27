@@ -95,6 +95,12 @@ HELP = {
     "chain": "A popular theory that government debt forces money-printing, which "
              "devalues the currency and inflates asset prices. Tracked as five stages "
              "that are each allowed to report NOT happening.",
+    "watch": "The indicators most in play right now. This list changes with "
+             "conditions - when credit is calm, spreads are background noise; when "
+             "the Sahm Rule is creeping toward its trigger, it is the main event.",
+    "change": "Specific observable conditions that would shift today's verdict. "
+              "Stated so you can check them yourself rather than take a forecast "
+              "on trust.",
     "outlook": "Sectors ranked by how well current conditions suit what they are "
                "exposed to - a statement about positioning, not a forecast. The last "
                "column shows what prices have actually done, so you can see where the "
@@ -245,6 +251,31 @@ font-variant-numeric:tabular-nums;}
 .dd-stale{font-size:10px;color:var(--muted);border:1px solid var(--grid);
 border-radius:3px;padding:0 4px;cursor:help;}
 .dd-spark{margin-top:2px;}
+.strip{display:flex;gap:0;overflow-x:auto;background:var(--card);
+border:1px solid var(--ring);border-radius:10px;margin:0 0 16px;
+-webkit-overflow-scrolling:touch;}
+.tk{flex:0 0 auto;padding:11px 16px;border-right:1px solid var(--rule-soft,rgba(128,128,128,.12));
+min-width:104px;cursor:help;}
+.tk:last-child{border-right:none;}
+.tk-name{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;
+color:var(--muted);font-weight:700;}
+.tk-val{font-size:15px;font-weight:650;color:var(--ink);margin-top:3px;
+font-variant-numeric:tabular-nums;}
+.tk-chg{font-size:12px;font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums;}
+.watch{display:flex;gap:13px;padding:14px 0;
+border-bottom:1px solid var(--rule-soft,rgba(128,128,128,.12));}
+.watch:last-of-type{border-bottom:none;}
+.watch-n{flex:none;width:24px;height:24px;border-radius:50%;background:var(--accent-soft,var(--grid));
+color:var(--ink);font-size:12px;font-weight:700;display:flex;align-items:center;
+justify-content:center;}
+.watch-body{flex:1;min-width:0;}
+.watch-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;}
+.watch-name{font-size:14.5px;font-weight:650;}
+.watch-val{font-size:14.5px;font-weight:650;white-space:nowrap;
+font-variant-numeric:tabular-nums;}
+.watch-why{font-size:12.5px;color:var(--watch-ink,#8a6100);margin-top:3px;font-weight:600;}
+.watch-what{font-size:12.5px;color:var(--ink-2);margin-top:5px;line-height:1.5;}
+.watch-next{font-size:11px;color:var(--muted);margin-top:6px;}
 """
 
 TIP_JS = """
@@ -537,6 +568,14 @@ def _regime_map(ctx):
     P.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="var(--grid)" '
              'stroke-dasharray="3 3"/>' % (px(0), pad, px(0), pad + span))
 
+    # you are here
+    cx, cy = px(g.score), py(i.score)
+    P.append('<circle cx="%.1f" cy="%.1f" r="13" fill="%s" opacity="0.16"/>'
+             % (cx, cy, STATUS["bad"]))
+    P.append('<circle cx="%.1f" cy="%.1f" r="6.5" fill="%s" stroke="var(--card)" '
+             'stroke-width="2.5"><title>Today</title></circle>'
+             % (cx, cy, STATUS["bad"]))
+
     # Regime names at their own profile coordinates. Label placement is explicit
     # per regime rather than computed: on this 2D plane Reflation and Late Cycle sit
     # about twelve pixels apart and Goldilocks is close behind, so an automatic rule
@@ -557,14 +596,6 @@ def _regime_map(ctx):
         P.append('<text x="%.1f" y="%.1f" font-size="9.5" text-anchor="%s" '
                  'fill="var(--muted)" font-family="system-ui,sans-serif">%s</text>'
                  % (x + dx, y + dy, anchor, _esc(name)))
-
-    # you are here
-    cx, cy = px(g.score), py(i.score)
-    P.append('<circle cx="%.1f" cy="%.1f" r="13" fill="%s" opacity="0.16"/>'
-             % (cx, cy, STATUS["bad"]))
-    P.append('<circle cx="%.1f" cy="%.1f" r="6.5" fill="%s" stroke="var(--card)" '
-             'stroke-width="2.5"><title>Today</title></circle>'
-             % (cx, cy, STATUS["bad"]))
 
     # axis labels
     P.append('<text x="%d" y="%d" font-size="10.5" fill="var(--ink-2)" '
@@ -1014,6 +1045,97 @@ def _outlook_section(ctx):
     return "".join(P)
 
 
+def _ticker_strip(ctx):
+    """Prices across the top, most-watched first.
+
+    Deliberately plain percentages rather than a colour-blocked heatmap: a grid of
+    coloured tiles encodes one number twice (position and hue) and reads as urgency
+    even on a quiet day. The numbers are the point.
+    """
+    rows = ctx.get("ticker") or []
+    if not rows:
+        return ""
+    P = ['<div class="strip">']
+    for r in rows:
+        chg = r.get("chg_1d")
+        color = ("var(--muted)" if chg is None
+                 else DIVERGE_POS if chg > 0 else DIVERGE_NEG if chg < 0 else "var(--muted)")
+        P.append('<div class="tk" data-tip="%s">'
+                 '<div class="tk-name">%s</div>'
+                 '<div class="tk-val">%s</div>'
+                 '<div class="tk-chg" style="color:%s;">%s</div></div>'
+                 % (_esc(r["name"]), _esc(r["label"]), _esc(r["value"]),
+                    color, "-" if chg is None else "%+.2f%%" % chg))
+    P.append('</div>')
+    return "".join(P)
+
+
+def _watchlist_section(ctx):
+    """The few numbers that matter most right now, and when each updates next."""
+    from .explain import tooltip
+    items = ctx.get("watchlist") or []
+    if not items:
+        return ""
+
+    from .email_builder import fmt_value
+    P = ['<div class="card">', '<h2>What to watch next%s</h2>' % _help("watch")]
+    P.append('<p class="section-lead">Not a fixed list. These are the indicators most '
+             'in play today, ranked by how close they sit to a level that would '
+             'signal, how heavily they weigh on the verdict, and how much they are '
+             'currently moving.</p>')
+
+    for i, it in enumerate(items, start=1):
+        r = it["value"]
+        tip = tooltip(it["sid"])
+        nxt = it.get("next_release")
+        P.append('<div class="watch">')
+        P.append('<div class="watch-n">%d</div>' % i)
+        P.append('<div class="watch-body">')
+        P.append('<div class="watch-head"><span class="watch-name">%s</span>'
+                 '<span class="watch-val">%s</span></div>'
+                 % ('<span class="dd-term" tabindex="0" data-tip="%s">%s</span>'
+                    % (_esc(tip), _esc(r.name)) if tip else _esc(r.name),
+                    _esc(fmt_value(r))))
+        P.append('<div class="watch-why">Watching because it %s.</div>' % _esc(it["reason"]))
+        if tip:
+            what = tip.split("  \u2014  ")[0]
+            why = tip.split("  \u2014  ")[-1]
+            P.append('<div class="watch-what"><strong>What it is:</strong> %s</div>' % _esc(what))
+            P.append('<div class="watch-what"><strong>Why it matters:</strong> %s</div>' % _esc(why))
+        if nxt:
+            P.append('<div class="watch-next">Next update expected around %s</div>'
+                     % _esc(nxt.strftime("%d %b")))
+        P.append('</div></div>')
+
+    P.append('<div class="note">Next-update dates are estimated from each series\u2019 own '
+             'release history rather than a fixed calendar, so they drift by a day or two '
+             'but never go stale.</div>')
+    P.append('</div>')
+    return "".join(P)
+
+
+def _change_section(ctx):
+    """What would move the verdict - the honest form of a forecast."""
+    items = ctx.get("would_change") or []
+    if not items:
+        return ""
+    P = ['<div class="card">', '<h2>What would change this view%s</h2>' % _help("change")]
+    P.append('<p class="section-lead">Rather than guessing where prices go, these are '
+             'the specific, observable things that would shift the reading. Each one '
+             'is checkable, so you can look rather than take it on trust.</p>')
+    for it in items:
+        P.append('<div style="border-left:3px solid %s;padding:9px 14px;margin:10px 0;">'
+                 '<div style="font-size:14px;font-weight:600;">%s</div>'
+                 '<div style="font-size:13px;color:var(--ink-2);margin-top:4px;'
+                 'line-height:1.55;">%s</div></div>'
+                 % (STATUS["watch"], _esc(it["what"]), _esc(it["detail"].strip())))
+    P.append('<div class="note"><strong>These are conditions, not predictions.</strong> '
+             'Nothing here says any of them will happen - only that if one does, the '
+             'reading changes, and here is the number to look at.</div>')
+    P.append('</div>')
+    return "".join(P)
+
+
 def _more(title, hint, inner, open_by_default=False):
     """A collapsed layer. The page should answer the question at a glance and let
     curiosity, not obligation, pull the reader deeper."""
@@ -1059,6 +1181,7 @@ def build(ctx, records=None, alerts=None, synthetic=False,
     signals_inner = _signals_section(ctx)
     body = [
         '<div class="wrap">',
+        _ticker_strip(ctx),
         '<div class="warn">These figures come from <strong>fabricated fixture data</strong> '
         'and are not real market observations. Run with live API keys to replace them.'
         '</div>' if synthetic else "",
@@ -1072,6 +1195,8 @@ def build(ctx, records=None, alerts=None, synthetic=False,
         'shows where today sits between the two extremes.</p>%s</div>'
         % (_help("pillar"), _pillar_cards(ctx)),
         signals_inner,
+        _watchlist_section(ctx),
+        _change_section(ctx),
         _outlook_section(ctx),
 
         # --- layer 2: the evidence, one tap away ---
@@ -1091,9 +1216,16 @@ def build(ctx, records=None, alerts=None, synthetic=False,
         '</div>',
     ]
 
+    from .pages import NAV_CSS, TABS
+    nav = ['<nav class="nav">']
+    for href, label, _hint in TABS:
+        cur = ' aria-current="page"' if href == "index.html" else ""
+        nav.append('<a href="%s"%s>%s</a>' % (href, cur, _esc(label)))
+    nav.append('</nav>')
+
     return (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         "<title>Market Regime Dashboard</title>"
-        "<style>%s</style></head><body>%s<script>%s</script></body></html>"
-        % (CSS, "".join(body), TIP_JS))
+        "<style>%s%s</style></head><body>%s<script>%s</script></body></html>"
+        % (CSS, NAV_CSS, "".join(body).replace('<div class="wrap">', '<div class="wrap">' + "".join(nav), 1), TIP_JS))

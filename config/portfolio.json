@@ -1,0 +1,17 @@
+{
+ "_comment": [
+  "Your watchlist. Add ticker symbols and they appear on the Portfolio tab with",
+  "price, daily move, and how each one sits against the current regime's favoured",
+  "and disfavoured sectors.",
+  "",
+  "Deliberately tickers only - no share counts, no cost basis, no profit and loss.",
+  "Adding those turns a tool for reading conditions into one for watching money,",
+  "which encourages exactly the reactive behaviour the rest of this is built to",
+  "avoid. Say the word if you want it anyway.",
+  "",
+  "Prices come from Yahoo via yfinance: free and unmetered, but an unofficial",
+  "endpoint. If it breaks the tab degrades to an empty state and nothing else is",
+  "affected."
+ ],
+ "tickers": []
+}

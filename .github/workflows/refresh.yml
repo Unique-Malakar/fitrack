@@ -1,0 +1,90 @@
+name: Intraday Refresh
+
+# Rebuilds the site during market hours so prices, the heatmap and the watchlist
+# stay current. The regime verdict is NOT recomputed from new macro data - FRED
+# publishes daily at best, so there would be nothing new to compute. What changes
+# intraday is prices, and those come from Yahoo, which is unmetered.
+#
+# Alpha Vantage is deliberately not called here. Its free tier allows 25 requests a
+# day and the morning brief spends 14; seven hourly runs would need ~98. The morning
+# pull is cached for twenty hours and reused instead.
+
+on:
+  schedule:
+    # Hourly, 14:00-21:00 UTC on weekdays - roughly 10:00 to 17:00 New York,
+    # covering the US session plus the close.
+    - cron: "0 14-21 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  # Never let a refresh overlap the morning brief, which writes the same pages.
+  group: site-build
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      built: ${{ steps.check.outputs.built }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install optional dependencies
+        continue-on-error: true
+        run: pip install -r requirements.txt
+
+      # --dry-run means no email: the brief is a once-a-morning thing and should
+      # not arrive seven more times during the day.
+      - name: Rebuild pages
+        id: build
+        continue-on-error: true
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+        run: python -m src.main --dashboard --dry-run
+
+      - name: Check what was produced
+        id: check
+        if: always()
+        run: |
+          if [ -s build/dashboard.html ]; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No dashboard produced; leaving the published site as it is."
+          fi
+
+      - name: Assemble Pages site
+        if: steps.check.outputs.built == 'true'
+        run: |
+          mkdir -p site
+          cp build/dashboard.html site/index.html
+          for page in heatmap news watchlist; do
+            [ -s "build/$page.html" ] && cp "build/$page.html" "site/$page.html" || true
+          done
+
+      - uses: actions/upload-pages-artifact@v5
+        if: steps.check.outputs.built == 'true'
+        with:
+          path: site
+
+  deploy:
+    needs: refresh
+    if: needs.refresh.outputs.built == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5

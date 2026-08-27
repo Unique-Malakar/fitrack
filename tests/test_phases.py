@@ -795,3 +795,430 @@ class TestSectorOutlook(unittest.TestCase):
         missing = [s["symbol"] for s in cfg
                    if s.get("role") == "sector" and s["symbol"] not in self.s.SENSITIVITY]
         self.assertEqual(missing, [], "sector ETFs without sensitivities: %s" % missing)
+
+
+class TestWatchlist(unittest.TestCase):
+    """The watchlist must respond to conditions rather than being a fixed list,
+    and 'what would change this' must stay checkable rather than predictive."""
+
+    def setUp(self):
+        from src.engine import watchlist
+        self.w = watchlist
+        self.cfg = load_cfg()
+        with open(os.path.join(ROOT, "config", "fred_series.json")) as fh:
+            self.specs = json.load(fh)["series"]
+
+    def _reading(self, sid, name, value, pillar=1, weight=1.0, drift=0.0,
+                 pct=50.0, freq="monthly", stale=False):
+        from src.engine.indicators import Reading
+        return Reading(sid=sid, name=name, pillar=pillar, unit="", decimals=2,
+                       weight=weight, freq=freq, value=value, as_of=date(2026, 8, 14),
+                       stale=stale, level=0.0, momentum=drift, trend=drift, drift=drift,
+                       score=0.0, percentile=pct, chg_1m=0.1, direction="flat")
+
+    def test_series_near_its_threshold_outranks_a_quiet_heavyweight(self):
+        near = self._reading("SAHMREALTIME", "Sahm", 0.47, weight=2.5)
+        quiet = self._reading("UNRATE", "Unemployment", 4.1, weight=1.5)
+        out = self.w.top_indicators([quiet, near], self.specs, limit=2)
+        self.assertEqual(out[0]["sid"], "SAHMREALTIME")
+        self.assertIn("signal", out[0]["reason"])
+
+    def test_stale_readings_are_never_surfaced(self):
+        stale = self._reading("UNRATE", "Unemployment", 4.1, weight=1.5, stale=True)
+        self.assertEqual(self.w.top_indicators([stale], self.specs), [])
+
+    def test_unscored_series_are_excluded(self):
+        """Weight-zero series are context, not things to watch."""
+        ctx = self._reading("PSAVERT", "Saving rate", 2.7, pillar=7, weight=0.0)
+        self.assertEqual(self.w.top_indicators([ctx], self.specs), [])
+
+    def test_list_changes_with_conditions(self):
+        calm = self._reading("SAHMREALTIME", "Sahm", -0.20, weight=2.5)
+        hot = self._reading("SAHMREALTIME", "Sahm", 0.47, weight=2.5)
+        other = self._reading("UNRATE", "Unemployment", 4.1, weight=1.5, drift=0.6)
+        calm_top = self.w.top_indicators([calm, other], self.specs, limit=1)[0]["sid"]
+        hot_top = self.w.top_indicators([hot, other], self.specs, limit=1)[0]["sid"]
+        self.assertNotEqual(calm_top, hot_top)
+
+    def test_next_release_follows_the_series_cadence(self):
+        weekly = self._reading("ICSA", "Claims", 230.0, freq="weekly")
+        monthly = self._reading("UNRATE", "Unemployment", 4.1, freq="monthly")
+        self.assertEqual((self.w.next_release(weekly) - date(2026, 8, 14)).days, 7)
+        self.assertEqual((self.w.next_release(monthly) - date(2026, 8, 14)).days, 30)
+
+    def test_what_would_change_flags_a_near_threshold(self):
+        near = self._reading("SAHMREALTIME", "Sahm", 0.47, weight=2.5)
+        d = regime.classify({n: FakePillar(n, 0.0) for n in (1, 2, 3, 4, 5)})
+        out = self.w.what_would_change({1: FakePillar(1, 0.0)}, [near], self.specs,
+                                       d, self.cfg)
+        self.assertTrue(any(i["kind"] == "threshold" for i in out))
+
+    def test_what_would_change_flags_a_close_regime_call(self):
+        pillars = {n: FakePillar(n, 0.0) for n in (1, 2, 3, 4, 5)}
+        d = regime.classify(pillars)
+        out = self.w.what_would_change(pillars, [], self.specs, d, self.cfg)
+        self.assertTrue(any(i["kind"] in ("regime", "pillar") for i in out))
+
+    def test_what_would_change_survives_empty_input(self):
+        d = regime.classify({n: FakePillar(n, 0.0, known=False) for n in (1, 2, 3, 4, 5)})
+        self.assertIsInstance(
+            self.w.what_would_change({}, [], self.specs, d, self.cfg), list)
+
+    def test_a_hairline_crossing_is_not_announced_as_crossed(self):
+        """CFNAI at -0.02 against a zero threshold is on the line, not across it."""
+        from src.engine.indicators import Reading
+        r = Reading(sid="CFNAI", name="CFNAI", pillar=1, unit="", decimals=2,
+                    weight=2.0, freq="monthly", value=-0.02, as_of=date(2026, 8, 14),
+                    stale=False, level=0.0, momentum=0.0, trend=0.0, drift=0.0,
+                    score=0.0, percentile=50.0, chg_1m=0.30, direction="flat")
+        out = self.w.top_indicators([r], self.specs, limit=1)
+        self.assertIn("sitting right on", out[0]["reason"])
+
+    def test_a_decisive_crossing_still_says_crossed(self):
+        from src.engine.indicators import Reading
+        r = Reading(sid="CFNAI", name="CFNAI", pillar=1, unit="", decimals=2,
+                    weight=2.0, freq="monthly", value=-0.85, as_of=date(2026, 8, 14),
+                    stale=False, level=0.0, momentum=0.0, trend=0.0, drift=0.0,
+                    score=0.0, percentile=5.0, chg_1m=0.10, direction="falling")
+        out = self.w.top_indicators([r], self.specs, limit=1)
+        self.assertIn("has crossed", out[0]["reason"])
+
+
+class TestNewFetchers(unittest.TestCase):
+    """Both of these consume third-party formats that degrade in confusing ways."""
+
+    def test_earnings_rejects_the_rate_limit_masquerading_as_csv(self):
+        """When the quota is exhausted, Alpha Vantage returns the CSV header plus
+        the word 'Information' spelled one letter per column. It parses cleanly."""
+        from src.fetchers import earnings_fetcher as E
+        from src.fetchers.http import FetchError
+        import csv, io
+        body = ("symbol,name,reportDate,fiscalDateEnding,estimate,currency,timeOfTheDay\n"
+                "I,n,f,o,r,m,a\n")
+        rows = list(csv.DictReader(io.StringIO(body)))
+        usable = [r for r in rows if E._parse_date(r.get("reportDate"))]
+        self.assertEqual(usable, [], "letter-salad row must not parse as data")
+
+    def test_earnings_select_filters_to_watched_names_and_horizon(self):
+        from src.fetchers import earnings_fetcher as E
+        rows = [
+            {"symbol": "AAPL", "name": "Apple", "reportDate": "2026-08-20",
+             "fiscalDateEnding": "2026-06-30", "estimate": "1.50", "timeOfTheDay": "post-market"},
+            {"symbol": "ZZZZ", "name": "Nobody", "reportDate": "2026-08-20",
+             "fiscalDateEnding": "", "estimate": "", "timeOfTheDay": ""},
+            {"symbol": "AAPL", "name": "Apple", "reportDate": "2027-01-01",
+             "fiscalDateEnding": "", "estimate": "", "timeOfTheDay": ""},
+        ]
+        got = E.select(rows, {"AAPL"}, days=21, today=date(2026, 8, 14))
+        self.assertEqual([e.symbol for e in got], ["AAPL"])
+        self.assertEqual(got[0].estimate, 1.50)
+
+    def test_earnings_select_ignores_past_dates(self):
+        from src.fetchers import earnings_fetcher as E
+        rows = [{"symbol": "AAPL", "name": "A", "reportDate": "2026-01-01",
+                 "fiscalDateEnding": "", "estimate": "", "timeOfTheDay": ""}]
+        self.assertEqual(E.select(rows, {"AAPL"}, today=date(2026, 8, 14)), [])
+
+    def test_rss_timestamps_are_always_naive(self):
+        """Mixed aware/naive stamps crashed the sort and took the whole tab down."""
+        from src.fetchers import rss_fetcher as R
+        aware = R._parse_when("Wed, 26 Aug 2026 14:30:00 +0200")
+        naive = R._parse_when("Wed, 26 Aug 2026 14:30:00")
+        self.assertIsNotNone(aware)
+        self.assertIsNone(aware.tzinfo)
+        self.assertIsNone(naive.tzinfo)
+        self.assertLess(aware, naive)  # +0200 converted back to UTC
+
+    def test_rss_unparseable_date_is_none_not_an_error(self):
+        from src.fetchers import rss_fetcher as R
+        self.assertIsNone(R._parse_when("not a date"))
+        self.assertIsNone(R._parse_when(""))
+
+    def test_rss_strips_markup_from_summaries(self):
+        from src.fetchers import rss_fetcher as R
+        self.assertEqual(R._clean("<p>Hello <b>world</b></p>"), "Hello world")
+
+    def test_dead_feed_returns_empty_not_an_exception(self):
+        from src.fetchers import rss_fetcher as R
+        self.assertEqual(R.fetch_feed("https://example.invalid/none.xml", "x", "y"), [])
+
+
+class TestTreemap(unittest.TestCase):
+    def setUp(self):
+        from src.output import treemap
+        self.t = treemap
+
+    class _Q:
+        def __init__(self, sym, cap, chg):
+            self.symbol, self.market_cap, self.change_pct = sym, cap, chg
+            self.price, self.sector = 10.0, None
+
+    def _quotes(self):
+        return {"A": self._Q("A", 3e12, 1.2), "B": self._Q("B", 1e12, -0.5),
+                "C": self._Q("C", 5e11, 0.0)}
+
+    def test_boxes_fill_the_canvas_without_overflow(self):
+        import re
+        svg = self.t.render(self._quotes(), {"Tech": ["A", "B"], "Energy": ["C"]},
+                            width=400, height=300)
+        rects = re.findall(r'<rect x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" height="([-\d.]+)"', svg)
+        self.assertTrue(rects)
+        for x, y, w, h in rects:
+            self.assertGreaterEqual(float(w), 0)
+            self.assertGreaterEqual(float(h), 0)
+            self.assertLessEqual(float(x) + float(w), 401)
+            self.assertLessEqual(float(y) + float(h), 301)
+
+    def test_area_is_proportional_to_market_cap(self):
+        boxes = self.t.squarify([(3e12, "big"), (1e12, "small")], 0, 0, 400, 300)
+        areas = {p: w * h for _, _, w, h, p in boxes}
+        self.assertAlmostEqual(areas["big"] / areas["small"], 3.0, places=1)
+
+    def test_colour_reflects_direction_and_magnitude(self):
+        self.assertNotEqual(self.t._shade(2.0), self.t._shade(-2.0))
+        self.assertEqual(self.t._shade(None), self.t.FLAT)
+        self.assertNotEqual(self.t._shade(0.2), self.t._shade(3.0))
+
+    def test_empty_input_renders_nothing_rather_than_breaking(self):
+        self.assertEqual(self.t.render({}, {"Tech": ["A"]}), "")
+        self.assertEqual(self.t.squarify([], 0, 0, 100, 100), [])
+
+    def test_no_nan_in_output(self):
+        svg = self.t.render(self._quotes(), {"Tech": ["A", "B", "C"]})
+        self.assertNotIn("nan", svg.lower())
+
+    def test_squarify_produces_squarish_boxes_not_slivers(self):
+        """The row-break comparison silently never fired, degenerating the map into
+        full-width slivers. Aspect ratios are the only thing that catches it."""
+        boxes = self.t.squarify([(v, "b%d" % i) for i, v in
+                                 enumerate([6, 6, 4, 3, 2, 2, 1])], 0, 0, 600, 400)
+        ratios = [max(w / h, h / w) for _, _, w, h, _ in boxes if w > 0 and h > 0]
+        self.assertEqual(len(boxes), 7)
+        self.assertLess(max(ratios), 4.0, "boxes are slivers: %s" % ratios)
+
+
+class TestAlphaVantageCache(unittest.TestCase):
+    """Hourly refreshes would need ~98 Alpha Vantage calls against a 25/day cap.
+    The morning pull is cached so intraday runs spend nothing."""
+
+    def setUp(self):
+        from src import store
+        from src.engine.timeseries import Series
+        self.store = store
+        self.series = Series("SPY", [date(2026, 8, 24) + timedelta(days=i)
+                                     for i in range(3)], [760.0, 764.0, 766.0])
+        self._orig = store.AV_CACHE_PATH
+        import tempfile
+        store.AV_CACHE_PATH = os.path.join(tempfile.mkdtemp(), "av.json")
+
+    def tearDown(self):
+        self.store.AV_CACHE_PATH = self._orig
+
+    def test_round_trip_preserves_dates_and_values(self):
+        self.store.save_av_cache({"SPY": self.series})
+        back = self.store.rehydrate_av(self.store.load_av_cache())
+        self.assertEqual(len(back["SPY"]), 3)
+        self.assertEqual(back["SPY"].latest, 766.0)
+        self.assertEqual(back["SPY"].dates[-1], self.series.dates[-1])
+
+    def test_cache_expires(self):
+        self.store.save_av_cache({"SPY": self.series})
+        self.assertIsNone(self.store.load_av_cache(max_age_hours=0))
+
+    def test_missing_cache_is_none_not_an_error(self):
+        self.assertIsNone(self.store.load_av_cache())
+
+    def test_corrupt_cache_is_none_not_an_error(self):
+        with open(self.store.AV_CACHE_PATH, "w") as fh:
+            fh.write("{not json")
+        self.assertIsNone(self.store.load_av_cache())
+
+    def test_rehydrate_skips_malformed_entries(self):
+        out = self.store.rehydrate_av({"BAD": {"dates": ["oops"], "values": [1.0]},
+                                       "OK": {"dates": ["2026-08-24"], "values": [5.0]}})
+        self.assertEqual(sorted(out), ["OK"])
+
+
+class TestAiCreditTracker(unittest.TestCase):
+    """Every stage must be able to read NOT FIRING - that is the whole point of
+    building this as a tracker rather than restating the argument."""
+
+    def setUp(self):
+        from src.engine import aicredit
+        self.a = aicredit
+
+    def _r(self, sid, value):
+        from src.engine.indicators import Reading
+        return Reading(sid=sid, name=sid, pillar=8, unit="", decimals=2, weight=0.0,
+                       freq="quarterly", value=value, as_of=date(2026, 8, 26),
+                       stale=False, level=0.0, momentum=0.0, trend=0.0, drift=0.0,
+                       score=0.0, percentile=50.0, direction="flat")
+
+    def test_calm_credit_reads_not_firing(self):
+        st = self.a.stage_borrowing({"NCBDBIQ027S": self._r("NCBDBIQ027S", 8982.0),
+                                     "BAMLC0A0CM": self._r("BAMLC0A0CM", 78.0)}, {})
+        self.assertEqual(st.status, self.a.NOT_FIRING)
+
+    def test_wide_spreads_fire_stage_one(self):
+        st = self.a.stage_borrowing({"NCBDBIQ027S": self._r("NCBDBIQ027S", 8982.0),
+                                     "BAMLC0A0CM": self._r("BAMLC0A0CM", 180.0)}, {})
+        self.assertEqual(st.status, self.a.FIRING)
+
+    def test_private_credit_lagging_junk_bonds_fires(self):
+        gauges = {"BIZD": {"ret_63": -9.0}, "HYG": {"ret_63": 1.0}}
+        self.assertEqual(self.a.stage_private_credit(gauges).status, self.a.FIRING)
+
+    def test_private_credit_tracking_junk_bonds_is_quiet(self):
+        gauges = {"BIZD": {"ret_63": 1.2}, "HYG": {"ret_63": 1.0}}
+        self.assertEqual(self.a.stage_private_credit(gauges).status, self.a.NOT_FIRING)
+
+    def test_insurer_concentration_needs_market_confirmation_to_fire(self):
+        readings = {"BOGZ1FL543063005Q": self._r("BOGZ1FL543063005Q", 5000.0),
+                    "BOGZ1FL544090005Q": self._r("BOGZ1FL544090005Q", 10000.0)}
+        calm = self.a.stage_insurers(readings, {"KIE": {"ret_63": 1.0},
+                                                "XLF": {"ret_63": 0.5}})
+        stressed = self.a.stage_insurers(readings, {"KIE": {"ret_63": -8.0},
+                                                    "XLF": {"ret_63": 1.0}})
+        self.assertEqual(calm.status, self.a.BUILDING)
+        self.assertEqual(stressed.status, self.a.FIRING)
+
+    def test_low_delinquencies_read_not_firing(self):
+        st = self.a.stage_stress({"DRCRELEXFACBS": self._r("DRCRELEXFACBS", 1.5),
+                                  "DRBLACBS": self._r("DRBLACBS", 1.3)})
+        self.assertEqual(st.status, self.a.NOT_FIRING)
+
+    def test_high_delinquencies_fire(self):
+        st = self.a.stage_stress({"DRCRELEXFACBS": self._r("DRCRELEXFACBS", 3.4),
+                                  "DRBLACBS": self._r("DRBLACBS", 2.1)})
+        self.assertEqual(st.status, self.a.FIRING)
+
+    def test_every_stage_can_report_not_firing(self):
+        readings = {"NCBDBIQ027S": self._r("NCBDBIQ027S", 8000.0),
+                    "BAMLC0A0CM": self._r("BAMLC0A0CM", 80.0),
+                    "BOGZ1FL543063005Q": self._r("BOGZ1FL543063005Q", 3000.0),
+                    "BOGZ1FL544090005Q": self._r("BOGZ1FL544090005Q", 10000.0),
+                    "DRCRELEXFACBS": self._r("DRCRELEXFACBS", 1.0),
+                    "DRBLACBS": self._r("DRBLACBS", 1.0),
+                    "IRLTLT01JPM156N": self._r("IRLTLT01JPM156N", 0.8)}
+        gauges = {"BIZD": {"ret_63": 1.0}, "HYG": {"ret_63": 1.0},
+                  "KIE": {"ret_63": 1.0}, "XLF": {"ret_63": 1.0}}
+        stages, summary = self.a.evaluate(readings, gauges)
+        self.assertEqual(summary["firing"], 0)
+        self.assertIn("Nothing is firing", summary["verdict"])
+
+    def test_missing_data_never_raises(self):
+        stages, summary = self.a.evaluate({}, {})
+        self.assertEqual(len(stages), 5)
+        self.assertEqual(summary["known"], 0)
+
+    def test_every_stage_declares_claim_test_and_caveat(self):
+        stages, _ = self.a.evaluate({}, {})
+        for st in stages:
+            self.assertTrue(st.claim, "stage %d has no claim" % st.num)
+            self.assertTrue(st.test, "stage %d has no test" % st.num)
+            self.assertTrue(st.caveat, "stage %d has no caveat" % st.num)
+
+    def test_unmeasurable_parts_are_declared_not_hidden(self):
+        self.assertGreaterEqual(len(self.a.NOT_MEASURABLE), 4)
+        titles = " ".join(t for t, _ in self.a.NOT_MEASURABLE).lower()
+        self.assertIn("capex", titles)
+        self.assertIn("2027", titles)
+
+    def test_no_individual_firms_are_tracked(self):
+        """A dashboard row naming a firm as systemically dangerous is a strong claim."""
+        with open(os.path.join(ROOT, "config", "aicredit_gauges.json")) as fh:
+            gauges = json.load(fh)["gauges"]
+        symbols = {g["symbol"] for g in gauges}
+        firms = {"APO", "KKR", "BX", "OWL", "ARES", "BN", "MET", "PRU", "LNC", "GL"}
+        self.assertEqual(symbols & firms, set())
+
+    def test_outperformance_is_not_described_as_tracking(self):
+        gauges = {"BIZD": {"ret_63": 6.4}, "HYG": {"ret_63": -0.3}}
+        st = self.a.stage_private_credit(gauges)
+        self.assertEqual(st.status, self.a.NOT_FIRING)
+        self.assertIn("OUTPERFORMED", st.detail)
+        self.assertNotIn("tracking public junk bonds within", st.detail)
+
+    def test_weak_datacentre_proxy_registers_in_stage_one(self):
+        readings = {"NCBDBIQ027S": self._r("NCBDBIQ027S", 8982.0),
+                    "BAMLC0A0CM": self._r("BAMLC0A0CM", 81.0)}
+        gauges = {"EQIX": {"ret_63": -12.0}, "XLF": {"ret_63": 0.4}}
+        st = self.a.stage_borrowing(readings, gauges)
+        self.assertEqual(st.status, self.a.BUILDING)
+        self.assertIn("Data-centre landlords", st.detail)
+
+
+class TestAssetCards(unittest.TestCase):
+    def setUp(self):
+        from src.output import assetcards
+        self.a = assetcards
+        self.spec = [{"symbol": "GC=F", "label": "Gold", "unit": "per oz", "decimals": 2}]
+        self.data = {"GC=F": {"price": 4683.2, "chg_1d": -0.4, "chg_6m": 12.3,
+                              "history": [4100.0, 4300.0, 4500.0, 4683.2]}}
+
+    def test_card_renders_price_change_and_chart(self):
+        html = self.a.cards("Metals", self.spec, self.data)
+        self.assertIn("4,683.20", html)
+        self.assertIn("-0.40% today", html)
+        self.assertIn("+12.3%", html)
+        self.assertIn("<polyline", html)
+
+    def test_rising_series_is_green_and_falling_is_red(self):
+        up = self.a._series_chart([1.0, 2.0, 3.0])
+        down = self.a._series_chart([3.0, 2.0, 1.0])
+        self.assertIn(self.a.UP, up)
+        self.assertIn(self.a.DOWN, down)
+
+    def test_green_is_up_per_the_convention(self):
+        """The user asked for green-up; a sign flip here would invert every card."""
+        self.assertEqual(self.a.UP, "#16a34a")
+        self.assertEqual(self.a.DOWN, "#e5484d")
+
+    def test_missing_symbol_is_skipped_not_broken(self):
+        self.assertEqual(self.a.cards("Metals", self.spec, {}), "")
+
+    def test_short_history_renders_no_chart_rather_than_a_broken_one(self):
+        self.assertEqual(self.a._series_chart([1.0]), "")
+        self.assertEqual(self.a._series_chart([]), "")
+
+    def test_chart_coordinates_are_finite(self):
+        import re
+        svg = self.a._series_chart([1.0, 9.0, 3.0, 7.0])
+        for pair in re.search(r'<polyline points="([^"]+)"', svg).group(1).split():
+            x, y = pair.split(",")
+            self.assertTrue(float(x) == float(x) and float(y) == float(y))
+
+    def test_heatmap_uses_green_up_red_down(self):
+        """_shade blends toward the surface for small moves, so check the hue
+        direction rather than an exact hex: green channel should lead on a rise,
+        red channel on a fall."""
+        from src.output import treemap
+        self.assertEqual(treemap.POS, "#16a34a")
+        self.assertEqual(treemap.NEG, "#e5484d")
+
+        def rgb(h):
+            return int(h[1:3], 16), int(h[3:5], 16), int(h[5:7], 16)
+
+        for pct in (0.5, 2.0, 5.0):
+            r, g, _ = rgb(treemap._shade(pct))
+            self.assertGreater(g, r, "a rise of %.1f%% should read green" % pct)
+            r, g, _ = rgb(treemap._shade(-pct))
+            self.assertGreater(r, g, "a fall of %.1f%% should read red" % pct)
+
+    def test_every_configured_asset_has_a_label_and_decimals(self):
+        with open(os.path.join(ROOT, "config", "assets.json")) as fh:
+            cfg = json.load(fh)
+        for group in ("crypto", "metals"):
+            for row in cfg[group]:
+                self.assertTrue(row.get("label"))
+                self.assertIsInstance(row.get("decimals"), int)
+
+    def test_six_month_figure_is_coloured_to_match_its_chart(self):
+        """A green 'today' above a red chart reads as a contradiction unless the
+        window figure is tied to the chart's colour."""
+        data = {"GC=F": {"price": 4683.2, "chg_1d": 1.0, "chg_6m": -9.5,
+                         "history": [5200.0, 4900.0, 4683.2]}}
+        html = self.a.cards("Metals", self.spec, data)
+        self.assertIn(self.a.DOWN, html)   # chart and the -9.5% both red
+        self.assertIn("-9.5%", html)
+        self.assertIn("+1.00% today", html)

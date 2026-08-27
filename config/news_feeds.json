@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Public RSS feeds, fetched at BUILD time and baked into the page - the published",
+    "dashboard runs under a strict content policy and cannot call other hosts.",
+    "Headlines carry the publisher's own summary verbatim; nothing is re-worded.",
+    "A dead feed yields an empty list rather than failing the build, so feeds can be",
+    "added speculatively.",
+    "CNBC is deliberately absent: it returns 403 to non-browser clients."
+  ],
+  "topics": {
+    "markets": "Markets & macro",
+    "ai": "AI, semiconductors & tech",
+    "sectors": "Energy, biotech & emerging markets"
+  },
+  "feeds": [
+    {"topic": "markets", "source": "WSJ Markets", "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"},
+    {"topic": "markets", "source": "MarketWatch", "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories"},
+    {"topic": "markets", "source": "Federal Reserve", "url": "https://www.federalreserve.gov/feeds/press_all.xml"},
+    {"topic": "ai", "source": "Google News", "url": "https://news.google.com/rss/search?q=semiconductor+OR+datacenter+AI+capex&hl=en-US&gl=US&ceid=US:en"},
+    {"topic": "sectors", "source": "Google News", "url": "https://news.google.com/rss/search?q=energy+OR+biotech+OR+%22emerging+markets%22+markets&hl=en-US&gl=US&ceid=US:en"},
+    {"topic": "sectors", "source": "EIA", "url": "https://www.eia.gov/rss/todayinenergy.xml"}
+  ]
+}
