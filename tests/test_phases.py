@@ -1222,3 +1222,23 @@ class TestAssetCards(unittest.TestCase):
         self.assertIn(self.a.DOWN, html)   # chart and the -9.5% both red
         self.assertIn("-9.5%", html)
         self.assertIn("+1.00% today", html)
+
+
+class TestDeployedPagesMatchNav(unittest.TestCase):
+    """Every tab in the nav must actually be copied to site/ by both workflows -
+    aicredit.html was linked and built but never deployed, giving a live 404."""
+
+    def test_every_nav_tab_is_in_the_deploy_step(self):
+        from src.output.pages import TABS
+        nav_pages = {href.replace(".html", "") for href, _, _ in TABS if href != "index.html"}
+        for wf in ("daily-brief.yml", "refresh.yml"):
+            path = os.path.join(ROOT, ".github", "workflows", wf)
+            with open(path) as fh:
+                content = fh.read()
+            m = re.search(r"for page in ([\w ]+); do", content)
+            self.assertIsNotNone(m, "%s has no page copy loop" % wf)
+            deployed = set(m.group(1).split())
+            missing = nav_pages - deployed
+            self.assertEqual(missing, set(),
+                             "%s does not deploy: %s (linked in nav but 404s live)"
+                             % (wf, missing))

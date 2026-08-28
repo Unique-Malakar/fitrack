@@ -91,7 +91,7 @@ jobs:
         run: |
           mkdir -p site
           cp build/dashboard.html site/index.html
-          for page in heatmap news watchlist; do
+          for page in heatmap news watchlist aicredit; do
             [ -s "build/$page.html" ] && cp "build/$page.html" "site/$page.html" || true
           done
           ls -la site/
