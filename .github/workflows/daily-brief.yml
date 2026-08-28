@@ -65,10 +65,11 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
-          # inputs.dry_run is "" on a schedule event, "true"/"false" on manual runs.
-          # Test for "true" so a scheduled run falls through and actually sends.
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "Dry run: building only, no email."
+          # Email is not wanted right now, so scheduled runs never attempt to send:
+          # only a manual "Run workflow" with dry_run explicitly unticked will try.
+          # This also means a missing SMTP_PASSWORD can no longer fail the schedule.
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.dry_run }}" != "false" ]; then
+            echo "Dry run: building and publishing only, no email."
             python -m src.main --dashboard --dry-run
           else
             python -m src.main --dashboard
