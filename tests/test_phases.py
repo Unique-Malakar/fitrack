@@ -1242,3 +1242,61 @@ class TestDeployedPagesMatchNav(unittest.TestCase):
             self.assertEqual(missing, set(),
                              "%s does not deploy: %s (linked in nav but 404s live)"
                              % (wf, missing))
+
+
+class TestDataFreshness(unittest.TestCase):
+    """FRED publishes daily series at T+1. Sourcing the strip's yield and VIX tiles
+    from it put two tiles a full day behind their Yahoo neighbours on the same row."""
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "config", "ticker_strip.json")) as fh:
+            self.tiles = json.load(fh)["tiles"]
+
+    def test_no_strip_tile_is_sourced_from_fred(self):
+        stale = [t.get("label") for t in self.tiles if t.get("source") == "fred"]
+        self.assertEqual(stale, [], "T+1 FRED tiles mixed into a live strip: %s" % stale)
+
+    def test_yield_and_volatility_tiles_use_live_symbols(self):
+        symbols = {t.get("symbol") for t in self.tiles}
+        self.assertIn("^TNX", symbols)
+        self.assertIn("^VIX", symbols)
+
+    def test_every_tile_declares_a_symbol(self):
+        for t in self.tiles:
+            self.assertTrue(t.get("symbol"), "tile without a symbol: %s" % t)
+            self.assertTrue(t.get("label"))
+
+
+class TestFredConcurrency(unittest.TestCase):
+    """Sequential fetching spent ~36 seconds per run waiting on the network."""
+
+    def setUp(self):
+        from src.fetchers import fred_fetcher
+        self.f = fred_fetcher
+        self.specs = [{"id": "DGS10", "name": "d", "pillar": 3, "freq": "daily",
+                       "polarity": 1, "transform": "level", "weight": 1.0},
+                      {"id": "DGS2", "name": "d", "pillar": 3, "freq": "daily",
+                       "polarity": 1, "transform": "level", "weight": 1.0}]
+
+    def test_parallel_and_sequential_agree(self):
+        seq, e1 = self.f.fetch_all(self.specs, "", use_fixtures=True, workers=1)
+        par, e2 = self.f.fetch_all(self.specs, "", use_fixtures=True, workers=4)
+        self.assertEqual(set(seq), set(par))
+        self.assertEqual(e1, e2)
+        for sid in seq:
+            self.assertEqual(seq[sid].values, par[sid].values)
+
+    def test_one_bad_series_does_not_poison_the_others(self):
+        specs = self.specs + [{"id": "NOT_A_SERIES", "name": "x", "pillar": 3,
+                               "freq": "daily", "polarity": 1,
+                               "transform": "level", "weight": 1.0}]
+        out, errs = self.f.fetch_all(specs, "", use_fixtures=True, workers=4)
+        self.assertIn("DGS10", out)
+        self.assertIn("NOT_A_SERIES", errs)
+
+    def test_scale_is_applied_under_concurrency(self):
+        specs = [{"id": "BAMLH0A0HYM2", "name": "hy", "pillar": 4, "freq": "daily",
+                  "polarity": 1, "transform": "level", "weight": 1.0, "scale": 100}]
+        out, _ = self.f.fetch_all(specs, "", use_fixtures=True, workers=4)
+        raw = self.f.fetch_series("BAMLH0A0HYM2", "", use_fixtures=True)
+        self.assertAlmostEqual(out["BAMLH0A0HYM2"].latest, raw.latest * 100, places=6)

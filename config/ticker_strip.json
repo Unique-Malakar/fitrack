@@ -4,8 +4,14 @@
   "Yahoo is unmetered, which is what makes crypto, futures and several international",
   "markets affordable - the Alpha Vantage free tier could not carry them alongside",
   "the regime engine's own symbols.",
-  "Order is deliberate: US equities, then bonds, then hard assets, then the rest of",
-  "the world. `source: fred` tiles come from the regime engine and need no request."
+  "",
+  "The 10-year yield and VIX come from Yahoo too, NOT from the regime engine's FRED",
+  "data. FRED publishes daily series at T+1, so sourcing them there put two tiles a",
+  "full day behind their neighbours on the same strip. FRED remains the source for",
+  "the engine's history and scoring, where the lag does not matter and the long,",
+  "consistent record does.",
+  "",
+  "Order is deliberate: US equities, then bonds, then hard assets, then the world."
  ],
  "tiles": [
   {
@@ -57,16 +63,16 @@
    "label": "Emerging mkts"
   },
   {
-   "source": "fred",
-   "sid": "DGS10",
+   "symbol": "^TNX",
    "label": "10y yield",
-   "suffix": "%"
+   "suffix": "%",
+   "decimals": 2
   },
   {
-   "source": "fred",
-   "sid": "VIXCLS",
+   "symbol": "^VIX",
    "label": "VIX",
-   "suffix": ""
+   "suffix": "",
+   "decimals": 2
   }
  ]
 }

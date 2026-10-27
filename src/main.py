@@ -343,10 +343,13 @@ def _build_ticker(by_sid, args):
         q = live.get(tile["symbol"])
         if q is None:
             continue
-        digits = 0 if q.price >= 1000 else 2
+        digits = tile.get("decimals")
+        if digits is None:
+            digits = 0 if q.price >= 1000 else 2
         out.append({"label": tile["label"],
                     "name": "%s (%s)" % (tile["label"], tile["symbol"]),
-                    "value": "{:,.{d}f}".format(q.price, d=digits),
+                    "value": "{:,.{d}f}{s}".format(q.price, d=digits,
+                                                   s=tile.get("suffix", "")),
                     "chg_1d": q.change_pct})
     return out
 

@@ -46,12 +46,47 @@ def fetch_series(sid, api_key, years=3, use_fixtures=False, record=False):
     return _parse(sid, payload)
 
 
-def fetch_all(specs, api_key, years=3, use_fixtures=False, record=False):
+def fetch_all(specs, api_key, years=3, use_fixtures=False, record=False, workers=8):
     """Fetch every configured series. Returns (series_by_id, errors_by_id).
 
     A single bad series must never abort the morning brief - the pillar scorer
     handles partial coverage and the email reports what was missed.
+
+    Fetched concurrently. Each series is an independent HTTP round trip of roughly
+    half a second, so doing seventy of them in sequence spent over thirty seconds
+    doing nothing but waiting. FRED allows 120,000 requests a day, so a modest pool
+    is well within its limits; the cap is kept low out of politeness rather than
+    necessity. Fixture reads stay sequential - they hit the local disk, where
+    threads only add overhead.
     """
+    if use_fixtures or record or workers <= 1:
+        return _fetch_sequential(specs, api_key, years, use_fixtures, record)
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _one(spec):
+        sid = spec["id"]
+        try:
+            series = fetch_series(sid, api_key, years, False, False)
+            if not series:
+                return sid, None, "no usable observations returned"
+            return sid, series.scaled(spec.get("scale")), None
+        except FetchError as exc:
+            return sid, None, str(exc)
+        except Exception as exc:  # noqa: BLE001 - a thread must not kill the run
+            return sid, None, "%s: %s" % (type(exc).__name__, exc)
+
+    out, errors = {}, {}
+    with ThreadPoolExecutor(max_workers=min(workers, len(specs) or 1)) as pool:
+        for sid, series, error in pool.map(_one, specs):
+            if error:
+                errors[sid] = error
+            else:
+                out[sid] = series
+    return out, errors
+
+
+def _fetch_sequential(specs, api_key, years, use_fixtures, record):
     out, errors = {}, {}
     for spec in specs:
         sid = spec["id"]

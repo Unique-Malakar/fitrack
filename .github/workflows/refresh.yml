@@ -11,9 +11,17 @@ name: Intraday Refresh
 
 on:
   schedule:
-    # Hourly, 14:00-21:00 UTC on weekdays - roughly 10:00 to 17:00 New York,
-    # covering the US session plus the close.
-    - cron: "0 14-21 * * 1-5"
+    # Every 30 minutes, 14:00-21:00 UTC on weekdays - roughly 10:00 to 17:00 in
+    # New York, covering the US session plus the close.
+    #
+    # Scheduled more often than the site actually needs, on purpose. GitHub's cron
+    # is best-effort and silently drops runs when the shared runners are busy: an
+    # hourly schedule was landing only two or three times a day instead of eight,
+    # which is why prices went stale for hours at a time. Asking more often does not
+    # make GitHub more reliable, but a larger number of attempts means more of them
+    # survive. Runs are cheap - public repositories get unlimited Actions minutes -
+    # and the concurrency group below keeps them from overlapping.
+    - cron: "0,30 14-21 * * 1-5"
   workflow_dispatch:
 
 concurrency:
